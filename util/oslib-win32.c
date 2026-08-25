@@ -79,7 +79,8 @@ void qemu_anon_ram_free(void *ptr, size_t size)
 /* FIXME: add proper locking */
 struct tm *gmtime_r(const time_t *timep, struct tm *result)
 {
-    struct tm *p = gmtime(timep);
+    time_t t = *timep < 0 ? 0 : *timep;
+    struct tm *p = gmtime(&t);
     memset(result, 0, sizeof(*result));
     if (p) {
         *result = *p;
