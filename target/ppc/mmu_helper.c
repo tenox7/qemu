@@ -377,7 +377,7 @@ void helper_store_sr(CPUPPCState *env, target_ulong srnum, target_ulong value)
             }
         }
 #else
-        env->tlb_need_flush |= TLB_NEED_LOCAL_FLUSH;
+        tlb_flush(env_cpu(env));
 #endif
     }
 }
