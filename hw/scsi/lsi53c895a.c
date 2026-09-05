@@ -236,6 +236,7 @@ struct LSIState {
     int waiting;
     SCSIBus bus;
     int current_lun;
+    bool current_discpriv;
     /* The tag is a combination of the device ID and the SCSI tag.  */
     uint32_t select_tag;
     int command_complete;
@@ -901,7 +902,7 @@ static void lsi_do_command(LSIState *s)
         scsi_req_continue(s->current->req);
     }
     if (!s->command_complete) {
-        if (n) {
+        if (n && s->current_discpriv) {
             /* Command did not complete immediately so disconnect.  */
             lsi_add_msg_byte(s, 2); /* SAVE DATA POINTER */
             lsi_add_msg_byte(s, 4); /* DISCONNECT */
@@ -909,6 +910,11 @@ static void lsi_do_command(LSIState *s)
             lsi_set_phase(s, PHASE_MI);
             s->msg_action = LSI_MSG_ACTION_DISCONNECT;
             lsi_queue_command(s);
+        } else if (n) {
+            /*
+             * The initiator did not grant disconnect privilege, so stay
+             * connected to avoid catastrophic failure.
+			 */
         } else {
             /* wait command complete */
             lsi_set_phase(s, PHASE_DI);
@@ -1113,7 +1119,8 @@ static void lsi_do_msgout(LSIState *s)
                 goto bad;
             }
             s->current_lun = msg & 7;
-            trace_lsi_do_msgout_select(s->current_lun);
+            s->current_discpriv = (msg & 0x40) != 0;
+            trace_lsi_do_msgout_select(s->current_lun, s->current_discpriv);
             lsi_set_phase(s, PHASE_CMD);
             break;
         }
