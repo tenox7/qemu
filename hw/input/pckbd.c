@@ -284,7 +284,7 @@ static void kbd_queue(KBDState *s, int b, int aux)
         s->cbdata = b;
         s->pending &= ~KBD_PENDING_CTRL_KBD & ~KBD_PENDING_CTRL_AUX;
         s->pending |= aux ? KBD_PENDING_CTRL_AUX : KBD_PENDING_CTRL_KBD;
-        kbd_safe_update_irq(s);
+        kbd_update_irq(s);
     } else {
         ps2_queue(aux ? PS2_DEVICE(&s->ps2mouse) : PS2_DEVICE(&s->ps2kbd), b);
     }
