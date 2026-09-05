@@ -1552,6 +1552,12 @@ again:
                 cond = s->carry != 0;
             }
             if (cond == jmp && (insn & (1 << 17))) {
+                /* An idle bus reads as DATA OUT; wait for a real phase. */
+                if (!(s->scntl1 & LSI_SCNTL1_CON)) {
+                    s->dsp -= 8;
+                    lsi_wait_reselect(s);
+                    break;
+                }
                 trace_lsi_execute_script_tc_compp(scsi_phase_name(s->sstat1),
                         jmp ? '=' : '!', scsi_phase_name(insn >> 24));
                 cond = (s->sstat1 & PHASE_MASK) == ((insn >> 24) & 7);
