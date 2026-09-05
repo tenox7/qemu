@@ -2240,6 +2240,8 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
             goto illegal_lba;
         }
         break;
+    case REZERO_UNIT:
+        break;
     case MODE_SELECT:
         trace_scsi_disk_emulate_command_MODE_SELECT(r->req.cmd.xfer);
         break;
@@ -2697,6 +2699,7 @@ static const SCSIReqOps *const scsi_disk_reqops_dispatch[256] = {
     [VERIFY_12]                       = &scsi_disk_emulate_reqops,
     [VERIFY_16]                       = &scsi_disk_emulate_reqops,
     [FORMAT_UNIT]                     = &scsi_disk_emulate_reqops,
+    [REZERO_UNIT]                     = &scsi_disk_emulate_reqops,
 
     [READ_6]                          = &scsi_disk_dma_reqops,
     [READ_10]                         = &scsi_disk_dma_reqops,
