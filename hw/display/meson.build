@@ -32,6 +32,7 @@ system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_fb.c'))
 system_ss.add(when: 'CONFIG_SM501', if_true: files('sm501.c'))
 system_ss.add(when: 'CONFIG_TCX', if_true: files('tcx.c'))
 system_ss.add(when: 'CONFIG_CG3', if_true: files('cg3.c'))
+system_ss.add(when: 'CONFIG_P9100', if_true: files('p9100.c'))
 system_ss.add(when: 'CONFIG_MACFB', if_true: files('macfb.c'))
 system_ss.add(when: 'CONFIG_NEXTCUBE', if_true: files('next-fb.c'))
 

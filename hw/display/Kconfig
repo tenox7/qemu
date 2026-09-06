@@ -92,6 +92,11 @@ config TCX
 config CG3
     bool
 
+config P9100
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+
 config ARTIST
     bool
     select FRAMEBUFFER
