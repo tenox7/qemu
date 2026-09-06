@@ -270,7 +270,8 @@ static void ibm_40p_init(MachineState *machine)
     }
 
     /* Set time-base frequency to 100 Mhz */
-    cpu_ppc_tb_init(env, 100UL * 1000UL * 1000UL);
+    /* TODO: verify against real machine!! divide by 4, fixes Solaris. */
+    cpu_ppc_tb_init(env, 100UL * 1000UL * 1000UL / 4);
     qemu_register_reset(ppc_prep_reset, cpu);
 
     /* allocate and load firmware */
