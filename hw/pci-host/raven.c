@@ -281,7 +281,9 @@ static void raven_pcihost_realizefn(DeviceState *d, Error **errp)
                           "pci-intack", 1);
     memory_region_add_subregion(address_space_mem, 0xbffffff0, &s->pci_intack);
 
-    pci_create_simple(h->bus, PCI_DEVFN(0, 0), TYPE_RAVEN_PCI_DEVICE);
+    /* Partial guess: create the PCI device outside of id 0-8. */
+	/* Solaris doesn't list it in ID 0-8 on a real 40p. */
+    pci_create_simple(h->bus, PCI_DEVFN(11, 0), TYPE_RAVEN_PCI_DEVICE);
 
     address_space_init(&s->bm_as, &s->bm, "raven-bm");
     pci_setup_iommu(h->bus, &raven_iommu_ops, s);
