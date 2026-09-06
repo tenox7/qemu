@@ -39,6 +39,8 @@
 #include "hw/core/loader.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/isa/pc87312.h"
+#include "hw/char/serial-isa.h"
+#include "chardev/char.h"
 #include "hw/core/qdev-properties.h"
 #include "exec/target_page.h"
 #include "system/kvm.h"
@@ -58,6 +60,9 @@
 #define BIOS_ADDR         0xfff00000
 #define BIOS_SIZE         (1 * MiB)
 #define NVRAM_SIZE        0x2000
+
+/* Two ports physically on the machine */
+#define PREP_SERIAL_PORTS 2
 
 static void fw_cfg_boot_set(void *opaque, const char *boot_device,
                             Error **errp)
@@ -254,6 +259,7 @@ static void ibm_40p_init(MachineState *machine)
     uint32_t kernel_base = 0, initrd_base = 0;
     long kernel_size = 0, initrd_size = 0;
     char boot_device;
+    int i;
 
     if (kvm_enabled()) {
         error_report("machine %s does not support the KVM accelerator",
@@ -321,6 +327,8 @@ static void ibm_40p_init(MachineState *machine)
     qdev_prop_set_uint32(dev, "equipment", 0xc0);
     isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
+    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(DEVICE(pcihost), 0));
+
     /* Memory controller */
     isa_dev = isa_new("rs6000-mc");
     dev = DEVICE(isa_dev);
@@ -354,7 +362,23 @@ static void ibm_40p_init(MachineState *machine)
         isa_dev = isa_new("pc87312");
         dev = DEVICE(isa_dev);
         qdev_prop_set_uint32(dev, "config", 12);
+        qdev_prop_set_bit(dev, "uarts", false);
         isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
+
+        for (i = 0; i < PREP_SERIAL_PORTS; i++) {
+            Chardev *chr = serial_hd(i);
+
+            if (!chr) {
+                g_autofree char *label = g_strdup_printf("prep-serial%d", i);
+
+                chr = qemu_chr_new(label, "null", NULL);
+            }
+            isa_dev = isa_new(TYPE_ISA_SERIAL);
+            dev = DEVICE(isa_dev);
+            qdev_prop_set_uint32(dev, "index", i);
+            qdev_prop_set_chr(dev, "chardev", chr);
+            isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
+        }
 
         dev = DEVICE(pci_create_simple(pci_bus, PCI_DEVFN(1, 0), "lsi53c810"));
         lsi53c8xx_handle_legacy_cmdline(dev);

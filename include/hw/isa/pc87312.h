@@ -38,6 +38,7 @@ struct PC87312State {
     /*< public >*/
 
     uint16_t iobase;
+	bool uarts;
     uint8_t config; /* initial configuration */
 
     struct {
