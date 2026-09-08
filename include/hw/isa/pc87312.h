@@ -49,6 +49,7 @@ struct PC87312State {
 
     uint8_t read_id_step;
     uint8_t selected_index;
+    bool data_write_pending;
 
     uint8_t regs[3];
 };

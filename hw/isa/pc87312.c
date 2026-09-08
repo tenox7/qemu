@@ -209,6 +209,7 @@ static void pc87312_soft_reset(PC87312State *s)
 
     s->read_id_step = 0;
     s->selected_index = REG_FER;
+    s->data_write_pending = false;
 
     s->regs[REG_FER] = fer_init[s->config & 0x1f];
     s->regs[REG_FAR] = far_init[s->config & 0x1f];
@@ -231,11 +232,24 @@ static void pc87312_io_write(void *opaque, hwaddr addr, uint64_t val,
         /* Index register */
         s->read_id_step = 2;
         s->selected_index = val;
+        s->data_write_pending = false;
     } else {
         /* Data register */
         if (s->selected_index < 3) {
-            s->regs[s->selected_index] = val;
-            reconfigure_devices(s);
+            /*
+             * Configuration data has to be written twice in a row: the
+             * register only updates on the second consecutive write to the
+             * data register (see "2.2 Software Configuration" in the
+             * datasheet).  A single write is discarded, and touching the
+             * index register starts over.
+             */
+            if (!s->data_write_pending) {
+                s->data_write_pending = true;
+            } else {
+                s->data_write_pending = false;
+                s->regs[s->selected_index] = val;
+                reconfigure_devices(s);
+            }
         }
     }
 }
@@ -327,6 +341,7 @@ static const VMStateDescription vmstate_pc87312 = {
         VMSTATE_UINT8(read_id_step, PC87312State),
         VMSTATE_UINT8(selected_index, PC87312State),
         VMSTATE_UINT8_ARRAY(regs, PC87312State, 3),
+        VMSTATE_BOOL_V(data_write_pending, PC87312State, 2),
         VMSTATE_END_OF_LIST()
     }
 };
