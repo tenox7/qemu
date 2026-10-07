@@ -1514,6 +1514,20 @@ void check_cp1_64bitmode(DisasContext *ctx)
 }
 
 /*
+ * 64-bit integer (L format) conversions. MIPS III/IV CPUs also execute them
+ * with FR=0, the operand living in an even/odd register pair like a double.
+ */
+static void check_cp1_l_fmt(DisasContext *ctx, int regs)
+{
+    if (ctx->insn_flags & ISA_MIPS_R1) {
+        check_cp1_64bitmode(ctx);
+        return;
+    }
+    check_insn(ctx, ISA_MIPS3);
+    check_cp1_registers(ctx, regs);
+}
+
+/*
  * Verify if floating point register is valid; an operation is not defined
  * if bit 0 of any register specification is set and the FR bit in the
  * Status register equals zero, since the register numbers specify an
@@ -9386,7 +9400,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_ROUND_L_S:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fd);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -9401,7 +9415,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_TRUNC_L_S:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fd);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -9416,7 +9430,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CEIL_L_S:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fd);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -9431,7 +9445,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_FLOOR_L_S:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fd);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -9720,7 +9734,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CVT_L_S:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fd);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -9866,7 +9880,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_ROUND_L_D:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
@@ -9880,7 +9894,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_TRUNC_L_D:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
@@ -9894,7 +9908,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CEIL_L_D:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
@@ -9908,7 +9922,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_FLOOR_L_D:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
@@ -10229,7 +10243,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CVT_L_D:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
@@ -10263,7 +10277,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CVT_S_L:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs);
         {
             TCGv_i32 fp32 = tcg_temp_new_i32();
             TCGv_i64 fp64 = tcg_temp_new_i64();
@@ -10274,7 +10288,7 @@ static void gen_farith(DisasContext *ctx, enum fopcode op1,
         }
         break;
     case OPC_CVT_D_L:
-        check_cp1_64bitmode(ctx);
+        check_cp1_l_fmt(ctx, fs | fd);
         {
             TCGv_i64 fp0 = tcg_temp_new_i64();
 
