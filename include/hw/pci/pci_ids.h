@@ -183,6 +183,10 @@
 
 #define PCI_VENDOR_ID_TI                 0x104c
 
+#define PCI_VENDOR_ID_S3                 0x5333
+#define PCI_DEVICE_ID_S3_TRIO            0x8811
+#define PCI_DEVICE_ID_S3_VISION864       0x88c1
+
 #define PCI_VENDOR_ID_MOTOROLA           0x1057
 #define PCI_DEVICE_ID_MOTOROLA_MPC106    0x0002
 #define PCI_DEVICE_ID_MOTOROLA_RAVEN     0x4801
