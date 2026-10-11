@@ -24,6 +24,7 @@
 #include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
 #include "net/net.h"
+#include "net/queue.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
@@ -458,7 +459,9 @@ static void dp8393x_do_transmit_packets(dp8393xState *s)
             s->regs[SONIC_TCR] |= SONIC_TCR_CRSL;
             if (nc->info->can_receive(nc)) {
                 s->loopback_packet = 1;
-                qemu_receive_packet(nc, s->tx_buffer, tx_len);
+                /* real SONIC loops back short frames unpadded */
+                qemu_net_queue_receive(nc->incoming_queue, s->tx_buffer,
+                                       tx_len);
             }
         } else {
             /* Transmit packet */
