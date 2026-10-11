@@ -28,6 +28,7 @@
 #include "qemu/host-utils.h"
 #include "exec/helper-proto.h"
 #include "exec/cputlb.h"
+#include "exec/translation-block.h"
 #include "exec/target_page.h"
 
 
@@ -1128,6 +1129,18 @@ void helper_mtc0_status(CPUMIPSState *env, target_ulong arg1)
     old = env->CP0_Status;
     cpu_mips_store_status(env, arg1);
     val = env->CP0_Status;
+
+    /*
+     * R4x00 CP0 hazard: the instruction after MTC0 Status completes before
+     * a newly enabled interrupt is taken. The NT 3.1 system call entry relies
+     * on it, reading k0 right after enabling interrupts.
+     */
+    if (!(env->insn_flags & ISA_MIPS_R1)) {
+        CPUState *cs = env_cpu(env);
+        cs->cflags_next_tb = cs->tcg_cflags | CF_NOIRQ | 1;
+        /* make the following TB return to the main loop to recheck irqs */
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
 
     if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
         qemu_log("Status %08x (%08x) => %08x (%08x) Cause %08x",
