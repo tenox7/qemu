@@ -33,8 +33,10 @@
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
+#include "qemu/main-loop.h"
 #include "system/address-spaces.h"
 #include "system/physmem.h"
+#include "hw/isa/isa.h"
 #include "trace.h"
 #include "qom/object.h"
 
@@ -103,6 +105,12 @@ struct rc4030State {
 
     MemoryRegion iomem_chipset;
     MemoryRegion iomem_jazzio;
+
+    /* ISA-style DMA requesters (floppy) */
+    IsaDmaTransferHandler isa_handler[4];
+    void *isa_opaque[4];
+    uint8_t isa_dreq;
+    QEMUBH *isa_bh;
 };
 
 static void set_next_tick(rc4030State *s)
@@ -363,6 +371,9 @@ static void rc4030_write(void *opaque, hwaddr addr, uint64_t data,
             int entry = (addr - 0x0100) >> 5;
             int idx = (addr & 0x1f) >> 3;
             s->dma_regs[entry][idx] = val;
+            if (s->isa_dreq & (1 << entry)) {
+                qemu_bh_schedule(s->isa_bh);
+            }
         }
         break;
     /* Memory refresh rate */
@@ -661,6 +672,82 @@ static rc4030_dma *rc4030_allocate_dmas(void *opaque, int n)
     return s;
 }
 
+/* IsaDma interface, used by the floppy controller */
+static int rc4030_isadma_rw(IsaDma *obj, int nchan, void *buf, int pos,
+                            int len, bool to_mem)
+{
+    rc4030State *s = RC4030(obj);
+    uint32_t *r = s->dma_regs[nchan];
+
+    if (!(r[DMA_REG_ENABLE] & DMA_FLAG_ENABLE)) {
+        return 0;
+    }
+    address_space_rw(&s->dma_as, r[DMA_REG_ADDRESS] + pos,
+                     MEMTXATTRS_UNSPECIFIED, buf, len, to_mem);
+    r[DMA_REG_COUNT] = r[DMA_REG_COUNT] > len ? r[DMA_REG_COUNT] - len : 0;
+    if (!r[DMA_REG_COUNT]) {
+        r[DMA_REG_ENABLE] |= DMA_FLAG_TC_INTR;
+    }
+    return len;
+}
+
+static int rc4030_isadma_read_memory(IsaDma *obj, int nchan, void *buf,
+                                     int pos, int len)
+{
+    return rc4030_isadma_rw(obj, nchan, buf, pos, len, false);
+}
+
+static int rc4030_isadma_write_memory(IsaDma *obj, int nchan, void *buf,
+                                      int pos, int len)
+{
+    return rc4030_isadma_rw(obj, nchan, buf, pos, len, true);
+}
+
+static bool rc4030_isadma_has_autoinit(IsaDma *obj, int nchan)
+{
+    return false;
+}
+
+static void rc4030_isadma_hold_DREQ(IsaDma *obj, int nchan)
+{
+    RC4030(obj)->isa_dreq |= 1 << nchan;
+}
+
+static void rc4030_isadma_release_DREQ(IsaDma *obj, int nchan)
+{
+    RC4030(obj)->isa_dreq &= ~(1 << nchan);
+}
+
+static void rc4030_isadma_schedule(IsaDma *obj)
+{
+    qemu_bh_schedule(RC4030(obj)->isa_bh);
+}
+
+static void rc4030_isadma_register_channel(IsaDma *obj, int nchan,
+                                           IsaDmaTransferHandler handler,
+                                           void *opaque)
+{
+    rc4030State *s = RC4030(obj);
+
+    s->isa_handler[nchan] = handler;
+    s->isa_opaque[nchan] = opaque;
+}
+
+static void rc4030_isadma_run(void *opaque)
+{
+    rc4030State *s = opaque;
+    int n;
+
+    for (n = 0; n < 4; n++) {
+        if (!(s->isa_dreq & (1 << n)) || !s->isa_handler[n] ||
+            !(s->dma_regs[n][DMA_REG_ENABLE] & DMA_FLAG_ENABLE)) {
+            continue;
+        }
+        s->isa_handler[n](s->isa_opaque[n], n, 0,
+                          s->dma_regs[n][DMA_REG_COUNT]);
+    }
+}
+
 static void rc4030_initfn(Object *obj)
 {
     DeviceState *dev = DEVICE(obj);
@@ -683,6 +770,7 @@ static void rc4030_realize(DeviceState *dev, Error **errp)
 
     s->periodic_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                      rc4030_periodic_timer, s);
+    s->isa_bh = qemu_bh_new(rc4030_isadma_run, s);
 
     memory_region_init_io(&s->iomem_chipset, o, &rc4030_ops, s,
                           "rc4030.chipset", 0x300);
@@ -700,6 +788,7 @@ static void rc4030_unrealize(DeviceState *dev)
     rc4030State *s = RC4030(dev);
 
     timer_free(s->periodic_timer);
+    qemu_bh_delete(s->isa_bh);
 
     address_space_destroy(&s->dma_as);
     object_unparent(OBJECT(&s->dma_mr));
@@ -708,11 +797,20 @@ static void rc4030_unrealize(DeviceState *dev)
 static void rc4030_class_init(ObjectClass *klass, const void *class_data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    IsaDmaClass *idc = ISADMA_CLASS(klass);
 
     dc->realize = rc4030_realize;
     dc->unrealize = rc4030_unrealize;
     device_class_set_legacy_reset(dc, rc4030_reset);
     dc->vmsd = &vmstate_rc4030;
+
+    idc->has_autoinitialization = rc4030_isadma_has_autoinit;
+    idc->read_memory = rc4030_isadma_read_memory;
+    idc->write_memory = rc4030_isadma_write_memory;
+    idc->hold_DREQ = rc4030_isadma_hold_DREQ;
+    idc->release_DREQ = rc4030_isadma_release_DREQ;
+    idc->schedule = rc4030_isadma_schedule;
+    idc->register_channel = rc4030_isadma_register_channel;
 }
 
 static const TypeInfo rc4030_info = {
@@ -721,6 +819,10 @@ static const TypeInfo rc4030_info = {
     .instance_size = sizeof(rc4030State),
     .instance_init = rc4030_initfn,
     .class_init = rc4030_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { TYPE_ISADMA },
+        { }
+    },
 };
 
 static void rc4030_iommu_memory_region_class_init(ObjectClass *klass,
