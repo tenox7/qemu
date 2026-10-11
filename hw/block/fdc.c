@@ -2005,6 +2005,36 @@ static void fdctrl_handle_readid(FDCtrl *fdctrl, int direction)
              (NANOSECONDS_PER_SECOND / 50));
 }
 
+/* FORMAT TRACK with DMA: C,H,R,N per sector, sectors filled with fifo[5] */
+static void fdctrl_format_track_dma(FDCtrl *fdctrl, FDrive *cur_drv)
+{
+    IsaDmaClass *k = ISADMA_GET_CLASS(fdctrl->dma);
+    uint8_t id[4], buf[FD_SECTOR_LEN];
+    int n;
+
+    fdctrl->data_state &= ~FD_STATE_FORMAT;
+    if (cur_drv->blk == NULL) {
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA, 0x00);
+        return;
+    }
+    if (cur_drv->ro) {
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK,
+                             FD_SR1_NW, 0x00);
+        return;
+    }
+    memset(buf, fdctrl->fifo[5], sizeof(buf));
+    for (n = 0; n < fdctrl->fifo[3]; n++) {
+        if (k->read_memory(fdctrl->dma, fdctrl->dma_chann, id, n * 4, 4) != 4 ||
+            fd_seek(cur_drv, id[1], id[0], id[2], 1) > 1 ||
+            blk_pwrite(cur_drv->blk, fd_offset(cur_drv), FD_SECTOR_LEN,
+                       buf, 0) < 0) {
+            fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, 0x00, 0x00);
+            return;
+        }
+    }
+    fdctrl_stop_transfer(fdctrl, 0x00, 0x00, 0x00);
+}
+
 static void fdctrl_handle_format_track(FDCtrl *fdctrl, int direction)
 {
     FDrive *cur_drv;
@@ -2025,10 +2055,10 @@ static void fdctrl_handle_format_track(FDCtrl *fdctrl, int direction)
 #else
     cur_drv->last_sect = fdctrl->fifo[3];
 #endif
-    /* TODO: implement format using DMA expected by the Bochs BIOS
-     * and Linux fdformat (read 3 bytes per sector via DMA and fill
-     * the sector with the specified fill byte
-     */
+    if ((fdctrl->dor & FD_DOR_DMAEN) && fdctrl->dma_chann != -1) {
+        fdctrl_format_track_dma(fdctrl, cur_drv);
+        return;
+    }
     fdctrl->data_state &= ~FD_STATE_FORMAT;
     fdctrl_stop_transfer(fdctrl, 0x00, 0x00, 0x00);
 }
