@@ -356,8 +356,8 @@ static void mips_jazz_init(MachineState *machine,
     for (n = 0; n < MAX_FD; n++) {
         fds[n] = drive_get(IF_FLOPPY, 0, n);
     }
-    /* FIXME: we should enable DMA with a custom IsaDma device */
-    fdctrl_init_sysbus(qdev_get_gpio_in(rc4030, 1), 0x80003000, fds);
+    fdctrl_init_sysbus(qdev_get_gpio_in(rc4030, 1), 0x80003000, fds,
+                       OBJECT(rc4030), 1);
 
     /* Real time clock */
     /* battery backed on real hardware; firmware and HAL expect binary mode */
