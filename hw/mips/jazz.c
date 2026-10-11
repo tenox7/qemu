@@ -38,6 +38,7 @@
 #include "hw/scsi/esp.h"
 #include "hw/core/loader.h"
 #include "hw/rtc/mc146818rtc.h"
+#include "hw/rtc/mc146818rtc_regs.h"
 #include "hw/timer/i8254.h"
 #include "hw/display/vga.h"
 #include "hw/display/bochs-vbe.h"
@@ -354,7 +355,9 @@ static void mips_jazz_init(MachineState *machine,
     fdctrl_init_sysbus(qdev_get_gpio_in(rc4030, 1), 0x80003000, fds);
 
     /* Real time clock */
-    mc146818_rtc_init(isa_bus, 1980, NULL);
+    /* battery backed on real hardware; firmware and HAL expect binary mode */
+    mc146818rtc_set_cmos_data(mc146818_rtc_init(isa_bus, 1980, NULL),
+                              RTC_REG_B, REG_B_24H | REG_B_DM);
     memory_region_init_io(rtc, NULL, &rtc_ops, NULL, "rtc", 0x1000);
     memory_region_add_subregion(address_space, 0x80004000, rtc);
 
