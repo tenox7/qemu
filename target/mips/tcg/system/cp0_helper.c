@@ -1410,6 +1410,9 @@ void HELPER(mtc0_taglo)(CPUMIPSState *env, target_ulong arg1)
          * Tag will take care of the read-only bits.
          */
         env->CP0_TagLo = arg1;
+    } else if (!(env->insn_flags & ISA_MIPS_R1)) {
+        /* R4x00 TagLo is fully writable; Windows NT uses it as a scratch */
+        env->CP0_TagLo = arg1;
     } else {
         env->CP0_TagLo = arg1 & 0xFFFFFCF6;
     }
