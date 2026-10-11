@@ -238,6 +238,7 @@ static const VMStateDescription vmstate_pit_common = {
 
 static const Property pit_common_properties[] = {
     DEFINE_PROP_UINT32("iobase", PITCommonState, iobase,  -1),
+    DEFINE_PROP_BOOL("idle-at-reset", PITCommonState, idle_at_reset, false),
 };
 
 static void pit_common_class_init(ObjectClass *klass, const void *data)

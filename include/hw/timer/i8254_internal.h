@@ -55,6 +55,7 @@ struct PITCommonState {
     MemoryRegion ioports;
     uint32_t iobase;
     PITChannelState channels[3];
+    bool idle_at_reset; /* counter 0 idle until programmed */
 };
 
 struct PITCommonClass {

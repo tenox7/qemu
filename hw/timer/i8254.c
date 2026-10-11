@@ -295,6 +295,12 @@ static void pit_reset(DeviceState *dev)
     pit_reset_common(pit);
 
     s = &pit->channels[0];
+    if (pit->idle_at_reset) {
+        s->next_transition_time = -1;
+        timer_del(s->irq_timer);
+        qemu_set_irq(s->irq, 0);
+        return;
+    }
     if (!s->irq_disabled) {
         timer_mod(s->irq_timer, s->next_transition_time);
     }
