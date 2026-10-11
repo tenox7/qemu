@@ -1806,6 +1806,10 @@ static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
 
     case FD_PHASE_RESULT:
         assert(!(fdctrl->msr & FD_MSR_NONDMA));
+        if (fdctrl->data_pos == 0) {
+            /* reading the first result byte clears INT */
+            fdctrl_reset_irq(fdctrl);
+        }
         if (++fdctrl->data_pos == fdctrl->data_len) {
             fdctrl->msr &= ~FD_MSR_RQM;
             fdctrl_to_command_phase(fdctrl);
