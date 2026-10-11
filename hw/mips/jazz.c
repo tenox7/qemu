@@ -403,7 +403,11 @@ static void mips_jazz_init(MachineState *machine,
     sysbus_mmio_map(sysbus, 0, 0x80009000);
 
     /* LED indicator */
-    sysbus_create_simple("jazz-led", 0x8000f000, NULL);
+    dev = qdev_new("jazz-led");
+    qdev_prop_set_bit(dev, "decoder", jazz_model == JAZZ_MAGNUM);
+    sysbus = SYS_BUS_DEVICE(dev);
+    sysbus_realize_and_unref(sysbus, &error_fatal);
+    sysbus_mmio_map(sysbus, 0, 0x8000f000);
 
     g_free(dmas);
 }

@@ -28,6 +28,7 @@
 #include "ui/pixel_ops.h"
 #include "trace.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
@@ -45,7 +46,22 @@ struct LedState {
     uint8_t segments;
     QemuConsole *con;
     screen_state_t state;
+    bool decoder;
 };
+
+/* MIPS Magnum: digit in bits 3:0 (b is '-', d is blank), dot in bit 4 */
+static const uint8_t jazz_led_font[16] = {
+    0xfc, 0x60, 0xda, 0xf2, 0x66, 0xb6, 0xbe, 0xe0,
+    0xfe, 0xf6, 0xee, 0x02, 0x9c, 0x00, 0x9e, 0x8e,
+};
+
+static uint8_t jazz_led_segments(LedState *s)
+{
+    if (!s->decoder) {
+        return s->segments;
+    }
+    return jazz_led_font[s->segments & 0xf] | ((s->segments >> 4) & 1);
+}
 
 static uint64_t jazz_led_read(void *opaque, hwaddr addr,
                               unsigned int size)
@@ -150,6 +166,7 @@ static bool jazz_led_update_display(void *opaque)
     DisplaySurface *surface = qemu_console_surface(s->con);
     uint8_t *d1;
     uint32_t color_segment, color_led;
+    uint8_t seg = jazz_led_segments(s);
     int y, bpp;
 
     if (s->state & REDRAW_BACKGROUND) {
@@ -191,22 +208,22 @@ static bool jazz_led_update_display(void *opaque)
 
         /* display segments */
         draw_horizontal_line(surface, 40, 10, 40,
-                             (s->segments & 0x02) ? color_segment : 0);
+                             (seg & 0x02) ? color_segment : 0);
         draw_vertical_line(surface, 10, 10, 40,
-                           (s->segments & 0x04) ? color_segment : 0);
+                           (seg & 0x04) ? color_segment : 0);
         draw_vertical_line(surface, 10, 40, 70,
-                           (s->segments & 0x08) ? color_segment : 0);
+                           (seg & 0x08) ? color_segment : 0);
         draw_horizontal_line(surface, 70, 10, 40,
-                             (s->segments & 0x10) ? color_segment : 0);
+                             (seg & 0x10) ? color_segment : 0);
         draw_vertical_line(surface, 40, 40, 70,
-                           (s->segments & 0x20) ? color_segment : 0);
+                           (seg & 0x20) ? color_segment : 0);
         draw_vertical_line(surface, 40, 10, 40,
-                           (s->segments & 0x40) ? color_segment : 0);
+                           (seg & 0x40) ? color_segment : 0);
         draw_horizontal_line(surface, 10, 10, 40,
-                             (s->segments & 0x80) ? color_segment : 0);
+                             (seg & 0x80) ? color_segment : 0);
 
         /* display led */
-        if (!(s->segments & 0x01)) {
+        if (!(seg & 0x01)) {
             color_led = 0; /* black */
         }
         draw_horizontal_line(surface, 68, 50, 50, color_led);
@@ -296,12 +313,17 @@ static void jazz_led_reset(DeviceState *d)
     qemu_console_resize(s->con, 60, 80);
 }
 
+static const Property jazz_led_properties[] = {
+    DEFINE_PROP_BOOL("decoder", LedState, decoder, false),
+};
+
 static void jazz_led_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->desc = "Jazz LED display",
     dc->vmsd = &vmstate_jazz_led;
+    device_class_set_props(dc, jazz_led_properties);
     device_class_set_legacy_reset(dc, jazz_led_reset);
     dc->realize = jazz_led_realize;
 }
