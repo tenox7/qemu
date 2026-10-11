@@ -534,8 +534,10 @@ static void rc4030_reset(DeviceState *dev)
     s->config = 0x410; /* some boards seem to accept 0x104 too */
     s->revision = 1;
     s->invalid_address_register = 0;
+    s->nmi_interrupt = 0;
 
     memset(s->dma_regs, 0, sizeof(s->dma_regs));
+    s->dma_tl_base = s->dma_tl_limit = 0;
 
     s->remote_failed_address = s->memory_failed_address = 0;
     s->cache_maint = 0;
