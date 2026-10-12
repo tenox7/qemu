@@ -501,6 +501,7 @@ static void ibm_40p_machine_init(MachineClass *mc)
 {
     static GlobalProperty compat[] = {
         { TYPE_ISA_FDC, "sra", "on" },
+        { TYPE_ISA_FDC, "seek-latency-us", "1000" },
         { TYPE_MC146818_RTC, "base_year", "2000" },
         { TYPE_MC146818_RTC, "century-byte", "off" },
     };

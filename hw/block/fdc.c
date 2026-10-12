@@ -1007,6 +1007,24 @@ static const VMStateDescription vmstate_fdc_result_timer = {
     }
 };
 
+static bool fdc_seek_timer_needed(void *opaque)
+{
+    FDCtrl *s = opaque;
+
+    return timer_pending(s->seek_timer);
+}
+
+static const VMStateDescription vmstate_fdc_seek_timer = {
+    .name = "fdc/seek_timer",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = fdc_seek_timer_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_TIMER_PTR(seek_timer, FDCtrl),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static bool fdc_phase_needed(void *opaque)
 {
     FDCtrl *fdctrl = opaque;
@@ -1066,6 +1084,7 @@ const VMStateDescription vmstate_fdc = {
     .subsections = (const VMStateDescription * const []) {
         &vmstate_fdc_reset_sensei,
         &vmstate_fdc_result_timer,
+        &vmstate_fdc_seek_timer,
         &vmstate_fdc_phase,
         NULL
     }
@@ -1093,6 +1112,21 @@ static void fdctrl_raise_irq(FDCtrl *fdctrl)
     FLOPPY_DPRINTF("Set interrupt status to 0x%02x\n", fdctrl->status0);
 }
 
+static void fdctrl_seek_timer(void *opaque)
+{
+    fdctrl_raise_irq(opaque);
+}
+
+static void fdctrl_seek_done(FDCtrl *fdctrl)
+{
+    if (!fdctrl->seek_latency_us) {
+        fdctrl_raise_irq(fdctrl);
+        return;
+    }
+    timer_mod(fdctrl->seek_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+              fdctrl->seek_latency_us * SCALE_US);
+}
+
 /* Reset controller */
 void fdctrl_reset(FDCtrl *fdctrl, int do_irq)
 {
@@ -1112,6 +1146,7 @@ void fdctrl_reset(FDCtrl *fdctrl, int do_irq)
     fdctrl->msr = FD_MSR_RQM;
     fdctrl->reset_sensei = 0;
     timer_del(fdctrl->result_timer);
+    timer_del(fdctrl->seek_timer);
     /* FIFO state */
     fdctrl->data_pos = 0;
     fdctrl->data_len = 0;
@@ -2040,7 +2075,7 @@ static void fdctrl_handle_recalibrate(FDCtrl *fdctrl, int direction)
         /* without a drive track 0 never shows up */
         fdctrl->status0 |= FD_SR0_ABNTERM | FD_SR0_EQPMT;
     }
-    fdctrl_raise_irq(fdctrl);
+    fdctrl_seek_done(fdctrl);
 }
 
 static void fdctrl_handle_sense_interrupt_status(FDCtrl *fdctrl, int direction)
@@ -2080,7 +2115,7 @@ static void fdctrl_handle_seek(FDCtrl *fdctrl, int direction)
     fd_seek(cur_drv, cur_drv->head, fdctrl->fifo[2], cur_drv->sect, 1);
     /* Raise Interrupt */
     fdctrl->status0 |= FD_SR0_SEEK;
-    fdctrl_raise_irq(fdctrl);
+    fdctrl_seek_done(fdctrl);
 }
 
 static void fdctrl_handle_perpendicular_mode(FDCtrl *fdctrl, int direction)
@@ -2413,6 +2448,8 @@ void fdctrl_realize_common(DeviceState *dev, FDCtrl *fdctrl, Error **errp)
     fdctrl->fifo = qemu_memalign(512, FD_SECTOR_LEN);
     memset(fdctrl->fifo, 0, FD_SECTOR_LEN);
     fdctrl->fifo_size = 512;
+    fdctrl->seek_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, fdctrl_seek_timer,
+                                      fdctrl);
     fdctrl->result_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                              fdctrl_result_timer, fdctrl);
 

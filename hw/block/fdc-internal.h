@@ -93,6 +93,9 @@ struct FDCtrl {
     qemu_irq irq;
     /* Controller state */
     QEMUTimer *result_timer;
+    /* delays the interrupt of SEEK and RECALIBRATE, 0 raises it at once */
+    QEMUTimer *seek_timer;
+    uint32_t seek_latency_us;
     int dma_chann;
     uint8_t phase;
     IsaDma *dma;
