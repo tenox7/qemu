@@ -512,6 +512,9 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
                 if ((s->cmos_data[RTC_REG_B] & REG_B_SET) &&
                     (s->cmos_data[RTC_REG_A] & 0x70) <= 0x20) {
                     s->offset = get_rtc_ns_since_last_update(s) % NANOSECONDS_PER_SECOND;
+                    /* the registers are read in the data mode being set */
+                    s->cmos_data[RTC_REG_B] &= ~(REG_B_DM | REG_B_24H);
+                    s->cmos_data[RTC_REG_B] |= data & (REG_B_DM | REG_B_24H);
                     rtc_set_time(s);
                 }
             }
