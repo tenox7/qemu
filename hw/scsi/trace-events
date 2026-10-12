@@ -253,6 +253,7 @@ lsi_bad_phase_interrupt(void) "Phase mismatch interrupt"
 lsi_bad_selection(uint32_t id) "Selected absent target %"PRIu32
 lsi_do_dma_unavailable(void) "DMA no data available"
 lsi_do_dma(uint64_t addr, int len) "DMA addr=0x%"PRIx64" len=%d"
+lsi_do_dma_out_data(uint64_t addr, int len, uint32_t w0, uint32_t w1) "DMA out addr=0x%"PRIx64" len=%d data 0x%08x 0x%08x"
 lsi_queue_command(uint32_t tag) "Queueing tag=0x%"PRIx32
 lsi_add_msg_byte_error(void) "MSG IN data too long"
 lsi_add_msg_byte(uint8_t data) "MSG IN 0x%02x"

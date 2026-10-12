@@ -17,6 +17,7 @@
 
 #include "hw/core/irq.h"
 #include "hw/pci/pci_device.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/scsi/scsi.h"
 #include "migration/vmstate.h"
 #include "system/dma.h"
@@ -227,6 +228,10 @@ struct LSIState {
     MemoryRegion io_io;
     AddressSpace pci_io_as;
     QEMUTimer *scripts_timer;
+    uint32_t select_latency_us;
+    bool select_timeout;
+    /* An absent target was selected; report STO when the SCRIPTS resume. */
+    bool sto_pending;
 
     int carry; /* ??? Should this be in a visible register somewhere?  */
     int status;
@@ -254,6 +259,13 @@ struct LSIState {
     uint8_t dien;
     uint8_t sist0;
     uint8_t sist1;
+    /*
+     * A SCSI interrupt condition that occurs while SIST0/SIST1 still hold an
+     * unread one is stacked: the chip holds it and presents it, with SIP
+     * still set, after the first has been read.
+     */
+    uint8_t sist0_stacked;
+    uint8_t sist1_stacked;
     uint8_t sien0;
     uint8_t sien1;
     uint8_t mbox0;
@@ -356,6 +368,7 @@ static void lsi_soft_reset(LSIState *s)
     s->msg_action = LSI_MSG_ACTION_COMMAND;
     s->msg_len = 0;
     s->waiting = LSI_NOWAIT;
+    s->sto_pending = false;
     s->dsa = 0;
     s->dnad = 0;
     s->dbc = 0;
@@ -368,6 +381,8 @@ static void lsi_soft_reset(LSIState *s)
     s->dien = 0;
     s->sist0 = 0;
     s->sist1 = 0;
+    s->sist0_stacked = 0;
+    s->sist1_stacked = 0;
     s->sien0 = 0;
     s->sien1 = 0;
     s->mbox0 = 0;
@@ -545,6 +560,11 @@ static void lsi_script_scsi_interrupt(LSIState *s, int stat0, int stat1)
     uint32_t mask1;
 
     trace_lsi_script_scsi_interrupt(stat1, stat0, s->sist1, s->sist0);
+    if ((s->sist0 & stat0) || (s->sist1 & stat1)) {
+        /* Already pending and unread: stack a second occurrence. */
+        s->sist0_stacked |= s->sist0 & stat0;
+        s->sist1_stacked |= s->sist1 & stat1;
+    }
     s->sist0 |= stat0;
     s->sist1 |= stat1;
     /* Stop processor on fatal or unmasked interrupt.  As a special hack
@@ -622,6 +642,13 @@ static void lsi_bad_selection(LSIState *s, uint32_t id)
     lsi_disconnect(s);
 }
 
+static uint32_t lsi_selection_timeout_us(LSIState *s)
+{
+    int sel = s->stime0 & 0xf;
+
+    return sel ? (125 << (sel - 1)) + 200 : 0;
+}
+
 /* Initiate a SCSI layer data transfer.  */
 static void lsi_do_dma(LSIState *s, int out)
 {
@@ -665,6 +692,8 @@ static void lsi_do_dma(LSIState *s, int out)
     /* ??? Set SFBR to first data byte.  */
     if (out) {
         lsi_mem_read(s, addr, p->dma_buf, count);
+        trace_lsi_do_dma_out_data(addr, count, ldl_le_p(p->dma_buf),
+                                  ldl_le_p(p->dma_buf + 4));
     } else {
         lsi_mem_write(s, addr, p->dma_buf, count);
     }
@@ -914,7 +943,7 @@ static void lsi_do_command(LSIState *s)
             /*
              * The initiator did not grant disconnect privilege, so stay
              * connected to avoid catastrophic failure.
-			 */
+             */
         } else {
             /* wait command complete */
             lsi_set_phase(s, PHASE_DI);
@@ -1168,10 +1197,11 @@ static void lsi_wait_reselect(LSIState *s)
     }
 }
 
-static void lsi_scripts_timer_start(LSIState *s)
+static void lsi_scripts_timer_start(LSIState *s, uint32_t delay_us)
 {
     trace_lsi_scripts_timer_start();
-    timer_mod(s->scripts_timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + 500);
+    timer_mod(s->scripts_timer,
+              qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + delay_us);
 }
 
 static void lsi_execute_script(LSIState *s)
@@ -1186,6 +1216,10 @@ static void lsi_execute_script(LSIState *s)
     if (s->waiting == LSI_WAIT_SCRIPTS) {
         timer_del(s->scripts_timer);
         s->waiting = LSI_NOWAIT;
+    }
+    if (s->sto_pending) {
+        s->sto_pending = false;
+        lsi_bad_selection(s, s->sdid);
     }
 
     object_ref(s);
@@ -1206,7 +1240,7 @@ again:
      */
     if (++insn_processed > LSI_MAX_INSN || reentrancy_level > 8) {
         s->waiting = LSI_WAIT_SCRIPTS;
-        lsi_scripts_timer_start(s);
+        lsi_scripts_timer_start(s, 500);
         reentrancy_level--;
         object_unref(s);
         return;
@@ -1366,6 +1400,22 @@ again:
                 s->sstat0 |= LSI_SSTAT0_WOA;
                 s->scntl1 &= ~LSI_SCNTL1_IARB;
                 if (!scsi_device_find(&s->bus, 0, id, 0)) {
+                    uint32_t timeout = lsi_selection_timeout_us(s);
+
+                    if (s->select_timeout && timeout) {
+                        /*
+                         * Nobody answers, and the chip finds that out only
+                         * when the STIME0 timer expires.  Pause the SCRIPTS
+                         * for that long; the time-out is reported when they
+                         * resume, wherever from.
+                         */
+                        s->sto_pending = true;
+                        s->waiting = LSI_WAIT_SCRIPTS;
+                        lsi_scripts_timer_start(s, timeout);
+                        reentrancy_level--;
+                        object_unref(s);
+                        return;
+                    }
                     lsi_bad_selection(s, id);
                     break;
                 }
@@ -1383,6 +1433,25 @@ again:
                 s->sbcl |= LSI_SBCL_BSY;
                 lsi_set_phase(s, PHASE_MO);
                 s->waiting = LSI_NOWAIT;
+                if (s->select_latency_us) {
+                    /*
+                     * Selection has completed, but a real target takes time
+                     * to answer.  Resume the SCRIPTS from the next
+                     * instruction once that time has passed, exactly as the
+                     * instruction-count limit above does.  Without this a
+                     * command completes, and its interrupt fires, inside the
+                     * register write that started it, before the driver has
+                     * finished its own bookkeeping - the OS/2 for PowerPC
+                     * SCSI driver checks whether its request is already done
+                     * before it sleeps on it, and a completion that lands in
+                     * between leaks its wakeup.
+                     */
+                    s->waiting = LSI_WAIT_SCRIPTS;
+                    lsi_scripts_timer_start(s, s->select_latency_us);
+                    reentrancy_level--;
+                    object_unref(s);
+                    return;
+                }
                 break;
             case 1: /* Disconnect */
                 trace_lsi_execute_script_io_disconnect();
@@ -1805,12 +1874,14 @@ static uint8_t lsi_reg_readb(LSIState *s, int offset)
         break;
     case 0x42: /* SIST0 */
         ret = s->sist0;
-        s->sist0 = 0;
+        s->sist0 = s->sist0_stacked;
+        s->sist0_stacked = 0;
         lsi_update_irq(s);
         break;
     case 0x43: /* SIST1 */
         ret = s->sist1;
-        s->sist1 = 0;
+        s->sist1 = s->sist1_stacked;
+        s->sist1_stacked = 0;
         lsi_update_irq(s);
         break;
     case 0x46: /* MACNTL */
@@ -2255,14 +2326,14 @@ static int lsi_post_load(void *opaque, int version_id)
     }
 
     if (s->waiting == LSI_WAIT_SCRIPTS) {
-        lsi_scripts_timer_start(s);
+        lsi_scripts_timer_start(s, 500);
     }
     return 0;
 }
 
 static const VMStateDescription vmstate_lsi_scsi = {
     .name = "lsiscsi",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 0,
     .pre_save = lsi_pre_save,
     .post_load = lsi_post_load,
@@ -2287,6 +2358,9 @@ static const VMStateDescription vmstate_lsi_scsi = {
         VMSTATE_UINT8(dien, LSIState),
         VMSTATE_UINT8(sist0, LSIState),
         VMSTATE_UINT8(sist1, LSIState),
+        VMSTATE_UINT8_V(sist0_stacked, LSIState, 2),
+        VMSTATE_UINT8_V(sist1_stacked, LSIState, 2),
+        VMSTATE_BOOL_V(sto_pending, LSIState, 2),
         VMSTATE_UINT8(sien0, LSIState),
         VMSTATE_UINT8(sien1, LSIState),
         VMSTATE_UINT8(mbox0, LSIState),
@@ -2412,11 +2486,25 @@ static void lsi_scsi_exit(PCIDevice *dev)
     timer_free(s->scripts_timer);
 }
 
+static const Property lsi_properties[] = {
+    /*
+     * Time for a selected target to respond, in microseconds.  Zero means
+     * the SCRIPTS run straight through the selection, as they always have.
+     */
+    DEFINE_PROP_UINT32("select-latency-us", LSIState, select_latency_us, 0),
+    /*
+     * Make selecting an absent target take the time-out programmed in
+     * STIME0 (up to a couple of seconds) rather than failing at once.
+     */
+    DEFINE_PROP_BOOL("select-timeout", LSIState, select_timeout, false),
+};
+
 static void lsi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, lsi_properties);
     k->realize = lsi_scsi_realize;
     k->exit = lsi_scsi_exit;
     k->vendor_id = PCI_VENDOR_ID_LSI_LOGIC;
