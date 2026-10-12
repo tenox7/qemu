@@ -16,6 +16,8 @@
 #include "qemu/log.h"
 #include "qemu/units.h"
 #include "qemu/module.h"
+#include "qapi/error.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/isa/isa.h"
 #include "../display/vga_int.h"
@@ -1229,7 +1231,8 @@ static void s3_reset(DeviceState *dev)
     s->transfer_data = s->transfer_bytes = 0;
     s->pending = s->unsupported = false;
     s->vga.cr[0x30] = 0x91; /* 86C928D */
-    s->vga.cr[0x36] = 0x8f; /* ISA, 2 MiB, 8-bit ROM */
+    /* CR36[7:5]: 100 = 2 MiB, 000 = 4 MiB (S3 DB02-C, table 12-1). */
+    s->vga.cr[0x36] = (s->vga.vram_size_mb == 2 ? 0x80 : 0) | 0x0f;
     s->vga.cr[0x37] = 0x02;
     s->reg[WRITE_MASK] = s->reg[READ_MASK] = 0xff;
     s->multi[3] = s->multi[4] = 0xfff;
@@ -1241,7 +1244,10 @@ static void s3_realize(DeviceState *dev, Error **errp)
     ISADevice *isa = ISA_DEVICE(dev);
     VGACommonState *vga = &s->vga;
     unsigned i;
-    vga->vram_size_mb = 2;
+    if (vga->vram_size_mb != 2 && vga->vram_size_mb != 4) {
+        error_setg(errp, "Jensen S3 VRAM must be 2 or 4 MiB");
+        return;
+    }
     if (!vga_common_init(vga, OBJECT(dev), errp)) {
         return;
     }
@@ -1286,6 +1292,10 @@ static const VMStateDescription s3_vmstate = {
     .unmigratable = true,
 };
 
+static const Property s3_properties[] = {
+    DEFINE_PROP_UINT32("vram-size-mb", JensenS3State, vga.vram_size_mb, 2),
+};
+
 static void s3_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1293,6 +1303,7 @@ static void s3_class_init(ObjectClass *klass, const void *data)
     dc->vmsd = &s3_vmstate;
     device_class_set_legacy_reset(dc, s3_reset);
     dc->user_creatable = false;
+    device_class_set_props(dc, s3_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }
 

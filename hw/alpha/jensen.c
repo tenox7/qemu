@@ -14,6 +14,7 @@
 #include "qemu/log.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "qapi/visitor.h"
 #include "hw/core/boards.h"
 #include "hw/block/flash.h"
 #include "hw/block/fdc.h"
@@ -76,6 +77,7 @@ struct JensenMachineState {
     uint8_t nmi_control, nmi_extended, nmi_mask;
     bool keyboard_locked;
     bool s3_928;
+    uint32_t s3_vram_mb;
     char *s3_romfile;
     PFlashCFI01 *flash[2];
     uint8_t hae, sysctl, spare, local_irqs;
@@ -853,8 +855,13 @@ static void jensen_init(MachineState *machine)
         exit(EXIT_FAILURE);
     }
     if (machine->enable_graphics) {
-        vga = s->s3_928 ? isa_create_simple(bus, "jensen-s3-928") :
-                          isa_vga_init(bus);
+        if (s->s3_928) {
+            vga = isa_new("jensen-s3-928");
+            qdev_prop_set_uint32(DEVICE(vga), "vram-size-mb", s->s3_vram_mb);
+            isa_realize_and_unref(vga, bus, &error_fatal);
+        } else {
+            vga = isa_vga_init(bus);
+        }
     }
     if (vga) {
         const char *vga_bios = !s->s3_928 && vga_interface_type == VGA_CIRRUS ?
@@ -981,6 +988,34 @@ static void jensen_set_s3_928(Object *obj, bool value, Error **errp)
     JENSEN_MACHINE(obj)->s3_928 = value;
 }
 
+static void jensen_get_s3_vram_mb(Object *obj, Visitor *v,
+                                  const char *name, void *opaque, Error **errp)
+{
+    uint32_t value = JENSEN_MACHINE(obj)->s3_vram_mb;
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void jensen_set_s3_vram_mb(Object *obj, Visitor *v,
+                                  const char *name, void *opaque, Error **errp)
+{
+    JensenMachineState *s = JENSEN_MACHINE(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+    if (s->cpu) {
+        error_setg(errp, "s3-vram-mb must be set before machine initialization");
+        return;
+    }
+    if (value != 2 && value != 4) {
+        error_setg(errp, "s3-vram-mb must be 2 or 4");
+        return;
+    }
+    s->s3_vram_mb = value;
+}
+
 static char *jensen_get_s3_romfile(Object *obj, Error **errp)
 {
     return g_strdup(JENSEN_MACHINE(obj)->s3_romfile ?: "");
@@ -997,6 +1032,11 @@ static void jensen_set_s3_romfile(Object *obj, const char *value, Error **errp)
     }
     g_free(s->s3_romfile);
     s->s3_romfile = *value ? g_strdup(value) : NULL;
+}
+
+static void jensen_instance_init(Object *obj)
+{
+    JENSEN_MACHINE(obj)->s3_vram_mb = 2;
 }
 
 static void jensen_finalize(Object *obj)
@@ -1039,6 +1079,11 @@ static void jensen_class_init(ObjectClass *oc, const void *data)
                                    jensen_set_s3_928);
     object_class_property_set_description(oc, "s3-928",
         "Experimental ISA S3 86C928 graphics (default: off)");
+    object_class_property_add(oc, "s3-vram-mb", "uint32",
+                              jensen_get_s3_vram_mb, jensen_set_s3_vram_mb,
+                              NULL, NULL);
+    object_class_property_set_description(oc, "s3-vram-mb",
+        "S3 86C928 video memory in MiB: 2 (default) or 4");
     object_class_property_add_str(oc, "s3-romfile", jensen_get_s3_romfile,
                                   jensen_set_s3_romfile);
     object_class_property_set_description(oc, "s3-romfile",
@@ -1058,6 +1103,7 @@ static const TypeInfo jensen_machine_info = {
     .name = TYPE_JENSEN_MACHINE,
     .parent = TYPE_MACHINE,
     .instance_size = sizeof(JensenMachineState),
+    .instance_init = jensen_instance_init,
     .class_init = jensen_class_init,
     .instance_finalize = jensen_finalize,
 };
