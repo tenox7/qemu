@@ -34,6 +34,7 @@
 #include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/bcd.h"
+#include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "trace.h"
 #include "system/watchdog.h"
@@ -346,6 +347,11 @@ void m48t59_write(M48t59State *NVRAM, uint32_t addr, uint32_t val)
     do_write:
         if (addr < NVRAM->size) {
             NVRAM->buffer[addr] = val & 0xFF;
+            if (NVRAM->file) {
+                fseek(NVRAM->file, addr, SEEK_SET);
+                fputc(val & 0xFF, NVRAM->file);
+                fflush(NVRAM->file);
+            }
         }
         break;
     }
@@ -566,6 +572,23 @@ const MemoryRegionOps m48t59_io_ops = {
 void m48t59_realize_common(M48t59State *s, Error **errp)
 {
     s->buffer = g_malloc0(s->size);
+    if (s->filename) {
+        FILE *f = fopen(s->filename, "rb");
+
+        if (f) {
+            if (fread(s->buffer, s->size, 1, f) != 1) {
+                warn_report("m48t59: short read from %s", s->filename);
+            }
+            fclose(f);
+        }
+        s->file = fopen(s->filename, "wb");
+        if (!s->file) {
+            error_setg_file_open(errp, errno, s->filename);
+            return;
+        }
+        fwrite(s->buffer, s->size, 1, s->file);
+        fflush(s->file);
+    }
     if (s->model == 59) {
         s->alrm_timer = timer_new_ns(rtc_clock, &alarm_cb, s);
         s->wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &watchdog_cb, s);
