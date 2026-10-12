@@ -1410,6 +1410,7 @@ struct CPUArchState {
     target_ulong hreset_vector;
     hwaddr mpic_iack;
     bool mpic_proxy;  /* true if the external proxy facility mode is enabled */
+    bool hpte_swap;   /* host bridge swaps byte lanes of hash table walks */
     bool has_hv_mode; /* set when the processor has an HV mode, thus HV priv */
                       /* instructions and SPRs are diallowed if MSR:HV is 0 */
     /*
