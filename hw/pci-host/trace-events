@@ -30,6 +30,10 @@ mv64361_region_enable(const char *op, int num) "Should %s region %d"
 mv64361_reg_read(uint64_t addr, uint32_t val) "0x%"PRIx64" -> 0x%x"
 mv64361_reg_write(uint64_t addr, uint64_t val) "0x%"PRIx64" <- 0x%"PRIx64
 
+# raven.c
+raven_mmcfg_read(uint64_t addr, uint32_t devfn_addr, unsigned size, uint64_t val) "addr 0x%" PRIx64 " -> devfn addr 0x%x size %u val 0x%" PRIx64
+raven_mmcfg_write(uint64_t addr, uint32_t devfn_addr, unsigned size, uint64_t val) "addr 0x%" PRIx64 " -> devfn addr 0x%x size %u val 0x%" PRIx64
+
 # sabre.c
 sabre_set_request(int irq_num) "request irq %d"
 sabre_clear_request(int irq_num) "clear request irq %d"

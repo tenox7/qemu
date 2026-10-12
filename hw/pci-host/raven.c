@@ -35,6 +35,7 @@
 #include "hw/core/irq.h"
 #include "hw/core/or-irq.h"
 #include "qom/object.h"
+#include "trace.h"
 
 #define TYPE_RAVEN_PCI_DEVICE "raven"
 #define TYPE_RAVEN_PCI_HOST_BRIDGE "raven-pcihost"
@@ -49,6 +50,8 @@ struct PREPPCIState {
     AddressSpace pci_io_as;
     MemoryRegion pci_io;
     MemoryRegion pci_io_non_contiguous;
+    MemoryRegion pci_io_system;
+    MemoryRegion pci_io_mmio_alias;
     MemoryRegion pci_memory;
     MemoryRegion pci_intack;
     MemoryRegion bm;
@@ -71,14 +74,17 @@ static void raven_mmcfg_write(void *opaque, hwaddr addr, uint64_t val,
 {
     PCIBus *hbus = opaque;
 
+    trace_raven_mmcfg_write(addr, raven_idsel_to_addr(addr), size, val);
     pci_data_write(hbus, raven_idsel_to_addr(addr), val, size);
 }
 
 static uint64_t raven_mmcfg_read(void *opaque, hwaddr addr, unsigned int size)
 {
     PCIBus *hbus = opaque;
+    uint64_t val = pci_data_read(hbus, raven_idsel_to_addr(addr), size);
 
-    return pci_data_read(hbus, raven_idsel_to_addr(addr), size);
+    trace_raven_mmcfg_read(addr, raven_idsel_to_addr(addr), size, val);
+    return val;
 }
 
 static const MemoryRegionOps raven_mmcfg_ops = {
@@ -107,6 +113,56 @@ static const MemoryRegionOps raven_intack_ops = {
     },
 };
 
+#define PCI_IO_MMIO_ALIAS_BASE_ADDR 0xE0000000 /* CPU address */
+#define PCI_IO_MMIO_ALIAS_SIZE      0x00010000 /* 64 KB, matches contiguous ISA I/O */
+
+static uint64_t raven_io_mmio_alias_read(void *opaque, hwaddr addr,
+                                         unsigned int size)
+{
+    PREPPCIState *s = opaque;
+    uint8_t buf[4];
+
+    address_space_read(&s->pci_io_as, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
+
+    if (size == 1) {
+        return buf[0];
+    } else if (size == 2) {
+        return lduw_le_p(buf);
+    } else if (size == 4) {
+        return ldl_le_p(buf);
+    } else {
+        g_assert_not_reached();
+    }
+}
+
+static void raven_io_mmio_alias_write(void *opaque, hwaddr addr,
+                                      uint64_t val, unsigned int size)
+{
+    PREPPCIState *s = opaque;
+    uint8_t buf[4];
+
+    if (size == 1) {
+        buf[0] = val;
+    } else if (size == 2) {
+        stw_le_p(buf, val);
+    } else if (size == 4) {
+        stl_le_p(buf, val);
+    } else {
+        g_assert_not_reached();
+    }
+
+    address_space_write(&s->pci_io_as, addr, MEMTXATTRS_UNSPECIFIED, buf, size);
+}
+
+static const MemoryRegionOps raven_io_mmio_alias_ops = {
+    .read = raven_io_mmio_alias_read,
+    .write = raven_io_mmio_alias_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl.max_access_size = 4,
+    .impl.unaligned = true,
+    .valid.unaligned = true,
+};
+
 static inline hwaddr raven_io_address(PREPPCIState *s,
                                       hwaddr addr)
 {
@@ -130,7 +186,7 @@ static uint64_t raven_io_read(void *opaque, hwaddr addr,
     uint8_t buf[4];
 
     addr = raven_io_address(s, addr);
-    address_space_read(&s->pci_io_as, addr + PCI_IO_BASE_ADDR,
+    address_space_read(&s->pci_io_as, addr,
                        MEMTXATTRS_UNSPECIFIED, buf, size);
 
     if (size == 1) {
@@ -162,7 +218,7 @@ static void raven_io_write(void *opaque, hwaddr addr,
         g_assert_not_reached();
     }
 
-    address_space_write(&s->pci_io_as, addr + PCI_IO_BASE_ADDR,
+    address_space_write(&s->pci_io_as, addr,
                         MEMTXATTRS_UNSPECIFIED, buf, size);
 }
 
@@ -215,25 +271,37 @@ static void raven_pcihost_realizefn(DeviceState *d, Error **errp)
     Object *obj = OBJECT(d);
     int i;
 
-    memory_region_init(&s->pci_io, obj, "pci-io", 0x3f800000);
+    memory_region_init(&s->pci_io, obj, "pci-io", UINT32_MAX);
     memory_region_init_io(&s->pci_io_non_contiguous, obj, &raven_io_ops, s,
                           "pci-io-non-contiguous", 0x00800000);
+    memory_region_init_io(&s->pci_io_mmio_alias, obj, &raven_io_mmio_alias_ops,
+                          s, "pci-io-mmio-alias", PCI_IO_MMIO_ALIAS_SIZE);
     memory_region_init(&s->pci_memory, obj, "pci-memory", 0x3f000000);
     address_space_init(&s->pci_io_as, &s->pci_io, "raven-io");
 
     /*
      * Raven's raven_io_ops use the address-space API to access pci-conf-idx
      * (which is also owned by the raven device). As such, mark the
-     * pci_io_non_contiguous as re-entrancy safe.
+     * pci_io_non_contiguous and pci_io_mmio_alias as re-entrancy safe.
      */
     s->pci_io_non_contiguous.disable_reentrancy_guard = true;
+    s->pci_io_mmio_alias.disable_reentrancy_guard = true;
+
+    memory_region_add_subregion_overlap(address_space_mem, 0x0,
+                                        &s->pci_io, -1);
+
+    memory_region_init_alias(&s->pci_io_system, obj, "pci-io-system",
+                             &s->pci_io, 0x0000000, 0x3f800000);
 
     /* CPU address space */
     memory_region_add_subregion(address_space_mem, PCI_IO_BASE_ADDR,
-                                &s->pci_io);
+                                &s->pci_io_system);
     memory_region_add_subregion_overlap(address_space_mem, PCI_IO_BASE_ADDR,
                                         &s->pci_io_non_contiguous, 1);
     memory_region_add_subregion(address_space_mem, 0xc0000000, &s->pci_memory);
+    memory_region_add_subregion_overlap(address_space_mem,
+                                        PCI_IO_MMIO_ALIAS_BASE_ADDR,
+                                        &s->pci_io_mmio_alias, 1);
 
     /* Bus master address space */
     memory_region_init(&s->bm, obj, "bm-raven", 4 * GiB);
