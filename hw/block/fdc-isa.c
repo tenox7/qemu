@@ -60,6 +60,7 @@ struct FDCtrlISABus {
     uint32_t iobase;
     uint32_t irq;
     uint32_t dma;
+    bool sra;
     struct FDCtrl state;
     PortioList portio_list;
     int32_t bootindexA;
@@ -85,6 +86,13 @@ static const MemoryRegionPortio fdc_portio_list[] = {
     PORTIO_END_OF_LIST(),
 };
 
+/* PS/2 mode adds status register A at offset 0 */
+static const MemoryRegionPortio fdc_sra_portio_list[] = {
+    { 0, 6, 1, .read = fdctrl_read, .write = fdctrl_write },
+    { 7, 1, 1, .read = fdctrl_read, .write = fdctrl_write },
+    PORTIO_END_OF_LIST(),
+};
+
 static void isabus_fdc_realize(DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
@@ -94,7 +102,9 @@ static void isabus_fdc_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     isa_register_portio_list(isadev, &isa->portio_list,
-                             isa->iobase, fdc_portio_list, fdctrl,
+                             isa->iobase,
+                             isa->sra ? fdc_sra_portio_list : fdc_portio_list,
+                             fdctrl,
                              "fdc");
 
     fdctrl->irq = isa_bus_get_irq(bus, isa->irq);
@@ -287,6 +297,7 @@ static const Property isa_fdc_properties[] = {
     DEFINE_PROP_UINT32("iobase", FDCtrlISABus, iobase, 0x3f0),
     DEFINE_PROP_UINT32("irq", FDCtrlISABus, irq, 6),
     DEFINE_PROP_UINT32("dma", FDCtrlISABus, dma, 2),
+    DEFINE_PROP_BOOL("sra", FDCtrlISABus, sra, false),
     DEFINE_PROP_SIGNED("fdtypeA", FDCtrlISABus, state.qdev_for_drives[0].type,
                         FLOPPY_DRIVE_TYPE_AUTO, qdev_prop_fdc_drive_type,
                         FloppyDriveType),
