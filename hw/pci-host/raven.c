@@ -357,11 +357,18 @@ static void raven_pcihost_realizefn(DeviceState *d, Error **errp)
     pci_setup_iommu(h->bus, &raven_iommu_ops, s);
 }
 
+/* the firmware starts with the contiguous I/O map */
+static void raven_pcihost_reset(DeviceState *d)
+{
+    RAVEN_PCI_HOST_BRIDGE(d)->contiguous_map = 0;
+}
+
 static void raven_pcihost_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = raven_pcihost_realizefn;
+    device_class_set_legacy_reset(dc, raven_pcihost_reset);
     dc->fw_name = "pci";
 }
 
