@@ -565,11 +565,11 @@ void register_generic_sprs(PowerPCCPU *cpu)
     } else {
         spr_register(env, SPR_WR_TBL, "TBL",
                      SPR_NOACCESS, SPR_NOACCESS,
-                     SPR_NOACCESS, &spr_write_tbl,
+                     &spr_read_tbl, &spr_write_tbl,
                      0x00000000);
         spr_register(env, SPR_WR_TBU, "TBU",
                      SPR_NOACCESS, SPR_NOACCESS,
-                     SPR_NOACCESS, &spr_write_tbu,
+                     &spr_read_tbu, &spr_write_tbu,
                      0x00000000);
     }
 #endif
