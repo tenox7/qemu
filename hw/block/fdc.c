@@ -2036,6 +2036,10 @@ static void fdctrl_handle_recalibrate(FDCtrl *fdctrl, int direction)
     fdctrl_to_command_phase(fdctrl);
     /* Raise Interrupt */
     fdctrl->status0 |= FD_SR0_SEEK;
+    if (cur_drv->drive == FLOPPY_DRIVE_TYPE_NONE) {
+        /* without a drive track 0 never shows up */
+        fdctrl->status0 |= FD_SR0_ABNTERM | FD_SR0_EQPMT;
+    }
     fdctrl_raise_irq(fdctrl);
 }
 
