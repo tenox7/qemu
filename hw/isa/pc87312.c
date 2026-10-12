@@ -25,10 +25,13 @@
 
 #include "qemu/osdep.h"
 #include "hw/isa/pc87312.h"
+#include "hw/block/fdc.h"
+#include "hw/char/parallel-isa.h"
+#include "hw/char/serial-isa.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
-#include "qemu/error-report.h"
+#include "qemu/log.h"
 #include "qemu/module.h"
 #include "trace.h"
 
@@ -182,8 +185,35 @@ static unsigned int get_ide_irq(ISASuperIODevice *sio, uint8_t index)
 
 static void reconfigure_devices(PC87312State *s)
 {
-    error_report("pc87312: unsupported device reconfiguration (%02x %02x %02x)",
-                 s->regs[REG_FER], s->regs[REG_FAR], s->regs[REG_PTR]);
+    ISASuperIODevice *sio = ISA_SUPERIO(s);
+    int i;
+
+    if (sio->parallel[0]) {
+        isa_parallel_set_enabled(sio->parallel[0],
+                                 is_parallel_enabled(sio, 0));
+        isa_parallel_set_iobase(sio->parallel[0],
+                                get_parallel_iobase(sio, 0));
+    }
+
+    for (i = 0; i < 2; i++) {
+        if (sio->serial[i]) {
+            isa_serial_set_enabled(sio->serial[i], is_uart_enabled(sio, i));
+            isa_serial_set_iobase(sio->serial[i], get_uart_iobase(sio, i));
+        }
+    }
+
+    if (sio->floppy) {
+        isa_fdc_set_enabled(sio->floppy, is_fdc_enabled(sio, 0));
+        isa_fdc_set_iobase(sio->floppy, get_fdc_iobase(sio, 0));
+    }
+
+    if ((sio->parallel[0] == NULL && is_parallel_enabled(sio, 0)) ||
+        (sio->floppy == NULL && is_fdc_enabled(sio, 0))) {
+        qemu_log_mask(LOG_UNIMP,
+                      "pc87312: cannot enable a device that was disabled "
+                      "at machine init (FER=%02x FAR=%02x PTR=%02x)\n",
+                      s->regs[REG_FER], s->regs[REG_FAR], s->regs[REG_PTR]);
+    }
 }
 
 static void pc87312_soft_reset(PC87312State *s)
