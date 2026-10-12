@@ -29,6 +29,7 @@
 #include "net/net.h"
 #include "hw/isa/isa.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/pci/pci_host.h"
 #include "hw/ppc/ppc.h"
 #include "hw/core/boards.h"
@@ -60,6 +61,9 @@
 #define BIOS_ADDR         0xfff00000
 #define BIOS_SIZE         (1 * MiB)
 #define NVRAM_SIZE        0x2000
+
+/* OS/2's S3 PMI driver expects the frame buffer here */
+#define PREP_VGA_FB_BASE  0x02800000
 
 /* Two ports physically on the machine */
 #define PREP_SERIAL_PORTS 2
@@ -234,6 +238,28 @@ static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
     return 0;
 }
 
+static PCIDevice *prep_vga;
+
+static void prep_vga_bar_reset(void *opaque)
+{
+    PCIDevice *vga = opaque;
+
+    pci_default_write_config(vga, PCI_BASE_ADDRESS_0, PREP_VGA_FB_BASE, 4);
+    pci_default_write_config(vga, PCI_COMMAND,
+                             pci_get_word(vga->config + PCI_COMMAND) |
+                             PCI_COMMAND_MEMORY, 2);
+}
+
+static void prep_machine_done(Notifier *notifier, void *data)
+{
+    qemu_register_reset(prep_vga_bar_reset, prep_vga);
+    prep_vga_bar_reset(prep_vga);
+}
+
+static Notifier prep_machine_done_notifier = {
+    .notify = prep_machine_done,
+};
+
 static bool nvram_kept(Nvram *nvram)
 {
     return object_property_get_bool(OBJECT(nvram), "persistent", NULL);
@@ -385,8 +411,10 @@ static void ibm_40p_init(MachineState *machine)
         lsi53c8xx_handle_legacy_cmdline(dev);
         qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(i82378_dev, 13));
 
-        /* XXX: s3-trio at PCI_DEVFN(2, 0) */
-        pci_vga_init(pci_bus);
+        prep_vga = pci_vga_init(pci_bus);
+        if (prep_vga) {
+            qemu_add_machine_init_done_notifier(&prep_machine_done_notifier);
+        }
 
         /* First PCNET device at PCI_DEVFN(3, 0) */
         pci_init_nic_in_slot(pci_bus, mc->default_nic, NULL, "3");
