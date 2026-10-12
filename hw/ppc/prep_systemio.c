@@ -30,7 +30,6 @@
 #include "migration/vmstate.h"
 #include "system/address-spaces.h"
 #include "qom/object.h"
-#include "qemu/error-report.h" /* for error_report() */
 #include "qemu/module.h"
 #include "system/runstate.h"
 #include "target/ppc/cpu.h"
@@ -53,6 +52,7 @@ struct PrepSystemIoState {
     uint8_t iomap_type; /* 0x0850 */
     uint8_t ibm_planar_id; /* 0x0852 */
     qemu_irq softreset_irq;
+    PowerPCCPU *cpu;
     PortioList portio;
 };
 
@@ -69,16 +69,21 @@ static void prep_port0092_write(void *opaque, uint32_t addr, uint32_t val)
 
     trace_prep_systemio_write(addr, val);
 
-    s->sreset = val & PORT0092_SOFTRESET;
-    qemu_set_irq(s->softreset_irq, s->sreset);
-
-    if ((val & PORT0092_LE_MODE) != 0) {
-        /* XXX Not supported yet */
-        error_report("little-endian mode not supported");
-        vm_stop(RUN_STATE_PAUSED);
-    } else {
-        /* Nothing to do */
+    /*
+     * The LE bit swaps byte lanes in the bridge. Together with the CPU's
+     * address munging that gives true little-endian, which is what MSR[LE]
+     * already does in QEMU, except for hash table walks.
+     *
+     * Clearing it only happens on the way back to the big-endian firmware,
+     * through code that relies on the CPU's munged view while the bridge no
+     * longer swaps. QEMU has no munged mode, so reset the machine instead.
+     */
+    if ((s->sreset & PORT0092_LE_MODE) && !(val & PORT0092_LE_MODE)) {
+        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
     }
+    s->sreset = val & (PORT0092_SOFTRESET | PORT0092_LE_MODE);
+    s->cpu->env.hpte_swap = val & PORT0092_LE_MODE;
+    qemu_set_irq(s->softreset_irq, val & PORT0092_SOFTRESET);
 }
 
 static uint32_t prep_port0092_read(void *opaque, uint32_t addr)
@@ -251,18 +256,25 @@ static const MemoryRegionOps ppc_parity_error_ops = {
     },
 };
 
+static void prep_systemio_reset(DeviceState *dev)
+{
+    PrepSystemIoState *s = PREP_SYSTEMIO(dev);
+
+    s->sreset = 0;
+    s->cpu->env.hpte_swap = false;
+}
+
 static void prep_systemio_realize(DeviceState *dev, Error **errp)
 {
     ISADevice *isa = ISA_DEVICE(dev);
     PrepSystemIoState *s = PREP_SYSTEMIO(dev);
-    PowerPCCPU *cpu;
 
     qdev_init_gpio_out(dev, &s->non_contiguous_io_map_irq, 1);
     s->iomap_type = PORT0850_IOMAP_NONCONTIGUOUS;
     qemu_set_irq(s->non_contiguous_io_map_irq,
                  s->iomap_type & PORT0850_IOMAP_NONCONTIGUOUS);
-    cpu = POWERPC_CPU(first_cpu);
-    s->softreset_irq = qdev_get_gpio_in(DEVICE(cpu), PPC6xx_INPUT_HRESET);
+    s->cpu = POWERPC_CPU(first_cpu);
+    s->softreset_irq = qdev_get_gpio_in(DEVICE(s->cpu), PPC6xx_INPUT_HRESET);
 
     isa_register_portio_list(isa, &s->portio, 0x0, ppc_io800_port_list, s,
                              "systemio800");
@@ -295,6 +307,7 @@ static void prep_systemio_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = prep_systemio_realize;
+    device_class_set_legacy_reset(dc, prep_systemio_reset);
     dc->vmsd = &vmstate_prep_systemio;
     device_class_set_props(dc, prep_systemio_properties);
 }
