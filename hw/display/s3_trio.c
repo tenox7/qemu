@@ -93,7 +93,7 @@ typedef struct S3GE {
 struct S3TrioState {
     PCIDevice parent_obj;
     VGACommonState vga;
-    MemoryRegion bar, lfb, lfb_be, mmio, mmio_be, vga_io, lowmem;
+    MemoryRegion bar, bar_at_0, lfb, lfb_be, mmio, mmio_be, vga_io, lowmem;
     MemoryRegion vga_io_mono, vga_io_color;
     MemoryRegion ge_io[S3_GE_PORTS];
     S3GEPort ge_port[S3_GE_PORTS];
@@ -1511,6 +1511,7 @@ static void s3_reset(void *opaque)
     static const uint8_t memsize[] = { [1] = 0xc0, [2] = 0x80, [4] = 0x00 };
 
     vga_common_reset(vga);
+    memory_region_set_enabled(&s->bar_at_0, false);
     memset(&s->ge, 0, sizeof(s->ge));
     s->ge.dirty_lo = UINT32_MAX;
     s->ge.wrt_mask = s->ge.rd_mask = UINT32_MAX;
@@ -1531,6 +1532,21 @@ static void s3_reset(void *opaque)
 }
 
 /* --------------------------------------------------------------- PCI glue */
+
+/* the IBM 40P firmware sizes video memory before it assigns BAR0 */
+static void s3_write_config(PCIDevice *d, uint32_t addr, uint32_t val, int len)
+{
+    S3TrioState *s = S3_TRIO(d);
+    uint32_t bar;
+    uint16_t cmd;
+
+    pci_default_write_config(d, addr, val, len);
+    bar = pci_get_long(d->config + PCI_BASE_ADDRESS_0);
+    cmd = pci_get_word(d->config + PCI_COMMAND);
+    memory_region_set_enabled(&s->bar_at_0,
+                              !(bar & PCI_BASE_ADDRESS_MEM_MASK) &&
+                              (cmd & PCI_COMMAND_MEMORY));
+}
 
 static void s3_realize(PCIDevice *d, Error **errp)
 {
@@ -1592,6 +1608,11 @@ static void s3_realize(PCIDevice *d, Error **errp)
     memory_region_add_subregion(&s->bar, 2 * S3_APERTURE, &s->lfb_be);
     memory_region_add_subregion(&s->bar, 3 * S3_APERTURE, &s->mmio_be);
     pci_register_bar(d, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar);
+    memory_region_init_alias(&s->bar_at_0, obj, "s3-bar0-at-0", &s->bar, 0,
+                             S3_BAR_SIZE);
+    memory_region_set_enabled(&s->bar_at_0, false);
+    memory_region_add_subregion_overlap(pci_address_space(d), 0,
+                                        &s->bar_at_0, 1);
 
     d->config[PCI_INTERRUPT_PIN] = 1;
     qemu_register_reset(s3_reset, s);
@@ -1620,6 +1641,7 @@ static void s3_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
     k->realize = s3_realize;
+    k->config_write = s3_write_config;
     k->vendor_id = 0x5333;
     k->device_id = 0x8811;
     k->revision = 0x40;
