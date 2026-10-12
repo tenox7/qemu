@@ -229,6 +229,14 @@ static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
     return 0;
 }
 
+static bool nvram_kept(Nvram *nvram)
+{
+    g_autofree char *file = object_property_get_str(OBJECT(nvram), "filename",
+                                                    NULL);
+
+    return file && *file;
+}
+
 static void ibm_40p_init(MachineState *machine)
 {
     const char *bios_name = machine->firmware ?: "openbios-ppc";
@@ -429,7 +437,7 @@ static void ibm_40p_init(MachineState *machine)
     qemu_register_boot_set(fw_cfg_boot_set, fw_cfg);
 
     /* Prepare firmware configuration for Open Hack'Ware */
-    if (m48t59) {
+    if (m48t59 && !nvram_kept(m48t59)) {
         PPC_NVRAM_set_params(m48t59, NVRAM_SIZE, "PREP", machine->ram_size,
                              boot_device,
                              kernel_base, kernel_size,
@@ -443,6 +451,10 @@ static void ibm_40p_init(MachineState *machine)
 
 static void ibm_40p_machine_init(MachineClass *mc)
 {
+    static GlobalProperty compat[] = {
+        { TYPE_ISA_FDC, "sra", "on" },
+    };
+
     mc->desc = "IBM RS/6000 7020 (40p)",
     mc->init = ibm_40p_init;
     mc->max_cpus = 1;
@@ -452,6 +464,8 @@ static void ibm_40p_machine_init(MachineClass *mc)
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("604");
     mc->default_display = "std";
     mc->default_nic = "pcnet";
+    mc->pci_allow_0_address = true;
+    compat_props_add(mc->compat_props, compat, G_N_ELEMENTS(compat));
 
     machine_add_audiodev_property(mc);
 }
