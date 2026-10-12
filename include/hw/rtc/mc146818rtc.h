@@ -28,6 +28,7 @@ struct MC146818RtcState {
     uint8_t isairq;
     uint16_t io_base;
     int32_t base_year;
+    bool century_byte;
     uint64_t base_rtc;
     uint64_t last_update;
     int64_t offset;

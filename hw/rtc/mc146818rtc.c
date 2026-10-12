@@ -77,6 +77,13 @@ static inline bool rtc_running(MC146818RtcState *s)
             (s->cmos_data[RTC_REG_A] & 0x70) <= 0x20);
 }
 
+/* without a century byte the century registers are plain CMOS RAM */
+static inline bool rtc_century_is_ram(MC146818RtcState *s)
+{
+    return !s->century_byte && (s->cmos_index == RTC_CENTURY ||
+                                s->cmos_index == RTC_IBM_PS2_CENTURY_BYTE);
+}
+
 /*
  * Note: get_rtc_ns_since_last_update() does not include the base_rtc seconds
  * value.  This does not matter if the caller only needs the nanoseconds part.
@@ -435,6 +442,10 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
         s->cmos_index = data & 0x7f;
     } else {
         trace_mc146818_rtc_ioport_write(s->cmos_index, data);
+        if (rtc_century_is_ram(s)) {
+            s->cmos_data[s->cmos_index] = data;
+            return;
+        }
         switch(s->cmos_index) {
         case RTC_SECONDS_ALARM:
         case RTC_MINUTES_ALARM:
@@ -583,8 +594,12 @@ static void rtc_get_time(MC146818RtcState *s, struct tm *tm)
     tm->tm_mday = rtc_from_bcd(s, s->cmos_data[RTC_DAY_OF_MONTH]);
     tm->tm_mon = rtc_from_bcd(s, s->cmos_data[RTC_MONTH]) - 1;
     tm->tm_year =
-        rtc_from_bcd(s, s->cmos_data[RTC_YEAR]) + s->base_year +
-        rtc_from_bcd(s, s->cmos_data[RTC_CENTURY]) * 100 - 1900;
+        rtc_from_bcd(s, s->cmos_data[RTC_YEAR]) + s->base_year - 1900;
+    if (s->century_byte) {
+        tm->tm_year += rtc_from_bcd(s, s->cmos_data[RTC_CENTURY]) * 100;
+    } else if (tm->tm_year < 70) {
+        tm->tm_year += 100;
+    }
 }
 
 static void rtc_set_time(MC146818RtcState *s)
@@ -620,7 +635,9 @@ static void rtc_set_cmos(MC146818RtcState *s, const struct tm *tm)
     s->cmos_data[RTC_MONTH] = rtc_to_bcd(s, tm->tm_mon + 1);
     year = tm->tm_year + 1900 - s->base_year;
     s->cmos_data[RTC_YEAR] = rtc_to_bcd(s, year % 100);
-    s->cmos_data[RTC_CENTURY] = rtc_to_bcd(s, year / 100);
+    if (s->century_byte) {
+        s->cmos_data[RTC_CENTURY] = rtc_to_bcd(s, year / 100);
+    }
 }
 
 static void rtc_update_time(MC146818RtcState *s)
@@ -671,6 +688,11 @@ static uint64_t cmos_ioport_read(void *opaque, hwaddr addr,
     if ((addr & 1) == 0) {
         return 0xff;
     } else {
+        if (rtc_century_is_ram(s)) {
+            ret = s->cmos_data[s->cmos_index];
+            trace_mc146818_rtc_ioport_read(s->cmos_index, ret);
+            return ret;
+        }
         switch(s->cmos_index) {
         case RTC_IBM_PS2_CENTURY_BYTE:
             s->cmos_index = RTC_CENTURY;
@@ -883,7 +905,7 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
      * (at least until 2079...) for base_year = 1980, but will be set
      * correctly for base_year = 2000.
      */
-    if (s->base_year == 2000) {
+    if (s->century_byte && s->base_year == 2000) {
         s->base_year = 0;
     }
 
@@ -952,6 +974,7 @@ MC146818RtcState *mc146818_rtc_init(ISABus *bus, int base_year,
 
 static const Property mc146818rtc_properties[] = {
     DEFINE_PROP_INT32("base_year", MC146818RtcState, base_year, 1980),
+    DEFINE_PROP_BOOL("century-byte", MC146818RtcState, century_byte, true),
     DEFINE_PROP_UINT16("iobase", MC146818RtcState, io_base, RTC_ISA_BASE),
     DEFINE_PROP_UINT8("irq", MC146818RtcState, isairq, RTC_ISA_IRQ),
     DEFINE_PROP_LOSTTICKPOLICY("lost_tick_policy", MC146818RtcState,
