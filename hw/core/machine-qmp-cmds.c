@@ -100,6 +100,8 @@ CpuDefinitionInfoList *qmp_query_cpu_definitions(Error **errp)
     case SYS_EMU_TARGET_AARCH64:
     case SYS_EMU_TARGET_ARM:
         return qmp_query_arm_cpu_definitions(errp);
+    case SYS_EMU_TARGET_ALPHA:
+        return qmp_query_alpha_cpu_definitions(errp);
     case SYS_EMU_TARGET_I386:
     case SYS_EMU_TARGET_X86_64:
         return qmp_query_i386_cpu_definitions(errp);

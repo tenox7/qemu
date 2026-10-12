@@ -53,6 +53,7 @@ struct PCIHostState {
 struct PCIHostBridgeClass {
     SysBusDeviceClass parent_class;
 
+    int (*hose_number)(PCIHostState *);
     const char *(*root_bus_path)(PCIHostState *, PCIBus *);
 };
 

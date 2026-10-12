@@ -278,6 +278,17 @@ static uint64_t kbd_read_status(void *opaque, hwaddr addr,
     return val;
 }
 
+/*
+ * Put the controller's reply in the output buffer at once, ahead of any
+ * keyboard or mouse data, as the Alpha firmware expects.
+ */
+static void kbd_ctrl_reset(KBDState *s)
+{
+    s->status |= KBD_STAT_OBF;
+    s->outport |= KBD_OUT_OBF;
+    s->obsrc = KBD_OBSRC_CTRL;
+}
+
 static void kbd_queue(KBDState *s, int b, int aux)
 {
     if (s->extended_state) {
@@ -357,6 +368,9 @@ static void kbd_write_command(void *opaque, hwaddr addr,
         break;
     case KBD_CCMD_SELF_TEST:
         s->status |= KBD_STAT_SELFTEST;
+        if (s->selftest_reply_first) {
+            kbd_ctrl_reset(s);
+        }
         kbd_queue(s, 0x55, 0);
         break;
     case KBD_CCMD_KBD_TEST:
@@ -935,6 +949,8 @@ static void i8042_build_aml(AcpiDevAmlIf *adev, Aml *scope)
 static const Property i8042_properties[] = {
     DEFINE_PROP_BOOL("extended-state", ISAKBDState, kbd.extended_state, true),
     DEFINE_PROP_BOOL("kbd-throttle", ISAKBDState, kbd_throttle, false),
+    DEFINE_PROP_BOOL("selftest-reply-first", ISAKBDState,
+                     kbd.selftest_reply_first, false),
     DEFINE_PROP_UINT8("kbd-irq", ISAKBDState, kbd_irq, 1),
     DEFINE_PROP_UINT8("mouse-irq", ISAKBDState, mouse_irq, 12),
 };

@@ -85,6 +85,7 @@ if have_system
   stub_ss.add(files('qmp-i386-sev.c'))
   stub_ss.add(files('qmp-i386-sgx.c'))
   stub_ss.add(files('qmp-i386-xen.c'))
+  stub_ss.add(files('qmp-cpu-alpha.c'))
   stub_ss.add(files('qmp-cpu-arm.c'))
   stub_ss.add(files('qmp-cpu-i386.c'))
   stub_ss.add(files('qmp-cpu-loongarch.c'))
@@ -94,6 +95,7 @@ if have_system
   stub_ss.add(files('qmp-cpu-s390x.c'))
   stub_ss.add(files('qmp-cpu-s390x-kvm.c'))
   if have_hmp
+    stub_ss.add(files('hmp-cmd-info_iprs.c'))
     stub_ss.add(files('hmp-cmd-info_mem.c'))
     stub_ss.add(files('hmp-cmd-info_sev.c'))
     stub_ss.add(files('hmp-cmd-info_tlb.c'))

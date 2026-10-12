@@ -161,6 +161,15 @@ static void i8259_set_irq(void *opaque, int irq, int level)
             cs->last_irr |= mask;
         } else {
             cs->last_irr &= ~mask;
+            if (cs->edge_irq_withdrawal) {
+                /*
+                 * 8259A datasheet p.18: both edge and level requests must
+                 * remain high through the first INTA. Withdrawal cancels
+                 * the pending request, not an already acknowledged ISR bit.
+                 * Legacy QEMU pulse sources require the compatibility mode.
+                 */
+                cs->irr &= ~mask;
+            }
         }
     }
     i8259_update_irq(cs);
@@ -256,7 +265,8 @@ static void i8259_base_ioport_write(void *opaque, hwaddr addr64,
             cs->init_state = 1;
             cs->init4 = val & 1;
             cs->single_mode = val & 2;
-            cs->ltim = val & 8;
+            /* EISA ISPs can disable LTIM in favor of per-input ELCR. */
+            cs->ltim = cs->ltim_supported ? val & 8 : 0;
         } else if (val & 0x08) {
             if (val & 0x04) {
                 cs->poll = 1;
@@ -440,6 +450,18 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
     return irq_set;
 }
 
+/*
+ * Default to the historical latch behavior: devices such as HPET deliver
+ * zero-duration QEMU IRQ pulses. Boards whose sources hold the physical IRQ
+ * until service may enable hardware request withdrawal without losing pulses
+ * on unrelated machines. LTIM remains supported by ordinary 8259A devices.
+ */
+static const Property i8259_properties[] = {
+    DEFINE_PROP_BOOL("edge-irq-withdrawal", I8259CommonState,
+                     edge_irq_withdrawal, false),
+    DEFINE_PROP_BOOL("ltim-supported", I8259CommonState, ltim_supported, true),
+};
+
 static void i8259_class_init(ObjectClass *klass, const void *data)
 {
     I8259Class *k = I8259_CLASS(klass);
@@ -447,6 +469,7 @@ static void i8259_class_init(ObjectClass *klass, const void *data)
 
     device_class_set_parent_realize(dc, i8259_realize, &k->parent_realize);
     device_class_set_legacy_reset(dc, i8259_reset);
+    device_class_set_props(dc, i8259_properties);
 }
 
 

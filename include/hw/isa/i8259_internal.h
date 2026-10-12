@@ -61,6 +61,9 @@ struct I8259CommonState {
     uint8_t elcr; /* PIIX edge/trigger selection*/
     uint8_t elcr_mask;
     uint8_t ltim; /* Edge/Level Bank Select (pre-PIIX, chip-wide) */
+    /* Software-model configuration; not guest registers or migrated state. */
+    bool edge_irq_withdrawal;
+    bool ltim_supported;
     qemu_irq int_out[1];
     uint32_t master; /* reflects /SP input pin */
     uint32_t iobase;

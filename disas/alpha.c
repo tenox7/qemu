@@ -146,7 +146,7 @@ extern const unsigned alpha_num_operands;
 #define AXP_OPERAND_TYPECHECK_MASK					\
   (AXP_OPERAND_PARENS | AXP_OPERAND_COMMA | AXP_OPERAND_IR |		\
    AXP_OPERAND_FPR | AXP_OPERAND_RELATIVE | AXP_OPERAND_SIGNED | 	\
-   AXP_OPERAND_UNSIGNED)
+   AXP_OPERAND_UNSIGNED | AXP_OPERAND_IPR)
 
 /* This operand does not actually exist in the assembler input.  This
    is used to support extended mnemonics, for which two operands fields
@@ -200,6 +200,9 @@ extern const unsigned alpha_num_operands;
 /* Similarly, this operand should default to the second (real) operand.
    This allows "negl $0" instead of "negl $0,$0".  */
 #define AXP_OPERAND_DEFAULT_SECOND 04000
+
+/* Print an IPR value. */
+#define AXP_OPERAND_IPR 010000
 
 
 /* Register common names */
@@ -415,7 +418,7 @@ const struct alpha_operand alpha_operands[] =
   /* The 16-bit combined index/scoreboard mask for the ev6
      hw_m[ft]pr (pal19/pal1d) insns */
 #define EV6HWINDEX	(EV5HWINDEX + 1)
-  { 16, 0, -EV6HWINDEX, AXP_OPERAND_UNSIGNED, 0, 0 },
+  { 8, 8, -EV6HWINDEX, AXP_OPERAND_UNSIGNED | AXP_OPERAND_IPR, 0, 0 },
 
   /* The 13-bit branch hint for the ev6 hw_jmp/jsr (pal1e) insn */
 #define EV6HWJMPHINT	(EV6HWINDEX+ 1)
@@ -706,9 +709,189 @@ extract_ev6hwjhint(unsigned insn, int *invalid ATTRIBUTE_UNUSED)
 		that were not assigned to a particular extension.
 */
 
+const struct alpha_opcode alpha_pal_vms_opcodes[] = {
+  { "halt",		SPCD(0x00,0x0000), BASE, ARG_NONE },
+  { "halt",		SPCD(0x00,0x0000), BASE, ARG_NONE },
+  { "cflush",		SPCD(0x00,0x0001), BASE, ARG_NONE },
+  { "draina",		SPCD(0x00,0x0002), BASE, ARG_NONE },
+  { "ldqp",		SPCD(0x00,0x0003), BASE, ARG_NONE },
+  { "stqp",		SPCD(0x00,0x0004), BASE, ARG_NONE },
+  { "swpctx",		SPCD(0x00,0x0005), BASE, ARG_NONE },
+  { "mfpr_asn",		SPCD(0x00,0x0006), BASE, ARG_NONE },
+  { "mtpr_asten",	SPCD(0x00,0x0007), BASE, ARG_NONE },
+  { "mtpr_astsr",	SPCD(0x00,0x0008), BASE, ARG_NONE },
+  { "cserve",		SPCD(0x00,0x0009), BASE, ARG_NONE },
+  { "swppal",		SPCD(0x00,0x000A), BASE, ARG_NONE },
+  { "mfpr_fen",		SPCD(0x00,0x000B), BASE, ARG_NONE },
+  { "mtpr_fen",		SPCD(0x00,0x000C), BASE, ARG_NONE },
+  { "mtpr_ipir",	SPCD(0x00,0x000D), BASE, ARG_NONE },
+  { "mfpr_ipl",		SPCD(0x00,0x000E), BASE, ARG_NONE },
+  { "mtpr_ipl",		SPCD(0x00,0x000F), BASE, ARG_NONE },
+  { "mfpr_mces",	SPCD(0x00,0x0010), BASE, ARG_NONE },
+  { "mtpr_mces",	SPCD(0x00,0x0011), BASE, ARG_NONE },
+  { "mfpr_pcbb",	SPCD(0x00,0x0012), BASE, ARG_NONE },
+  { "mfpr_prbr",	SPCD(0x00,0x0013), BASE, ARG_NONE },
+  { "mtpr_prbr",	SPCD(0x00,0x0014), BASE, ARG_NONE },
+  { "mfpr_ptbr",	SPCD(0x00,0x0015), BASE, ARG_NONE },
+  { "mfpr_scbb",	SPCD(0x00,0x0016), BASE, ARG_NONE },
+  { "mtpr_scbb",	SPCD(0x00,0x0017), BASE, ARG_NONE },
+  { "mtpr_sirr",	SPCD(0x00,0x0018), BASE, ARG_NONE },
+  { "mfpr_sisr",	SPCD(0x00,0x0019), BASE, ARG_NONE },
+  { "mfpr_tbchk",	SPCD(0x00,0x001A), BASE, ARG_NONE },
+  { "mtpr_tbia",	SPCD(0x00,0x001B), BASE, ARG_NONE },
+  { "mtpr_tbiap",	SPCD(0x00,0x001C), BASE, ARG_NONE },
+  { "mtpr_tbis",	SPCD(0x00,0x001D), BASE, ARG_NONE },
+  { "mfpr_esp",		SPCD(0x00,0x001E), BASE, ARG_NONE },
+  { "mtpr_esp",		SPCD(0x00,0x001F), BASE, ARG_NONE },
+  { "mfpr_ssp",		SPCD(0x00,0x0020), BASE, ARG_NONE },
+  { "mtpr_ssp",		SPCD(0x00,0x0021), BASE, ARG_NONE },
+  { "mfpr_usp",		SPCD(0x00,0x0022), BASE, ARG_NONE },
+  { "mtpr_usp",		SPCD(0x00,0x0023), BASE, ARG_NONE },
+  { "mtpr_tbisd",	SPCD(0x00,0x0024), BASE, ARG_NONE },
+  { "mtpr_tbisi",	SPCD(0x00,0x0025), BASE, ARG_NONE },
+  { "mfpr_asten",	SPCD(0x00,0x0026), BASE, ARG_NONE },
+  { "mfpr_astsr",	SPCD(0x00,0x0027), BASE, ARG_NONE },
+  { "mfpr_vptb",	SPCD(0x00,0x0029), BASE, ARG_NONE },
+  { "mtpr_vptb",	SPCD(0x00,0x002A), BASE, ARG_NONE },
+  { "mtpr_perfmon",	SPCD(0x00,0x002B), BASE, ARG_NONE },
+  { "mtpr_datfx",	SPCD(0x00,0x002E), BASE, ARG_NONE },
+  { "wtint",		SPCD(0x00,0x003E), BASE, ARG_NONE },
+  { "mfpr_whami",	SPCD(0x00,0x003F), BASE, ARG_NONE },
+  { "bpt",		SPCD(0x00,0x0080), BASE, ARG_NONE },
+  { "bugchk",		SPCD(0x00,0x0081), BASE, ARG_NONE },
+  { "chme",		SPCD(0x00,0x0082), BASE, ARG_NONE },
+  { "chmk",		SPCD(0x00,0x0083), BASE, ARG_NONE },
+  { "chms",		SPCD(0x00,0x0084), BASE, ARG_NONE },
+  { "chmu",		SPCD(0x00,0x0085), BASE, ARG_NONE },
+  { "imb",		SPCD(0x00,0x0086), BASE, ARG_NONE },
+  { "insqhil",		SPCD(0x00,0x0087), BASE, ARG_NONE },
+  { "insqtil",		SPCD(0x00,0x0088), BASE, ARG_NONE },
+  { "insqhiq",		SPCD(0x00,0x0089), BASE, ARG_NONE },
+  { "insqtiq",		SPCD(0x00,0x008A), BASE, ARG_NONE },
+  { "insquel",		SPCD(0x00,0x008B), BASE, ARG_NONE },
+  { "insqueq",		SPCD(0x00,0x008C), BASE, ARG_NONE },
+  { "insquel/d",	SPCD(0x00,0x008D), BASE, ARG_NONE },
+  { "insqueq/d",	SPCD(0x00,0x008E), BASE, ARG_NONE },
+  { "prober",		SPCD(0x00,0x008F), BASE, ARG_NONE },
+  { "probew",		SPCD(0x00,0x0090), BASE, ARG_NONE },
+  { "rd_ps",		SPCD(0x00,0x0091), BASE, ARG_NONE },
+  { "rei",		SPCD(0x00,0x0092), BASE, ARG_NONE },
+  { "remqhil",		SPCD(0x00,0x0093), BASE, ARG_NONE },
+  { "remqtil",		SPCD(0x00,0x0094), BASE, ARG_NONE },
+  { "remqhiq",		SPCD(0x00,0x0095), BASE, ARG_NONE },
+  { "remqtiq",		SPCD(0x00,0x0096), BASE, ARG_NONE },
+  { "remquel",		SPCD(0x00,0x0097), BASE, ARG_NONE },
+  { "remqueq",		SPCD(0x00,0x0098), BASE, ARG_NONE },
+  { "remquel/d",	SPCD(0x00,0x0099), BASE, ARG_NONE },
+  { "remqueq/d",	SPCD(0x00,0x009A), BASE, ARG_NONE },
+  { "swasten",		SPCD(0x00,0x009B), BASE, ARG_NONE },
+  { "wr_ps_sw",		SPCD(0x00,0x009C), BASE, ARG_NONE },
+  { "rscc",		SPCD(0x00,0x009D), BASE, ARG_NONE },
+  { "read_unq",		SPCD(0x00,0x009E), BASE, ARG_NONE },
+  { "write_unq",	SPCD(0x00,0x009F), BASE, ARG_NONE },
+  { "amovrr",		SPCD(0x00,0x00A0), BASE, ARG_NONE },
+  { "amovrm",		SPCD(0x00,0x00A1), BASE, ARG_NONE },
+  { "insqhilr",		SPCD(0x00,0x00A2), BASE, ARG_NONE },
+  { "insqtilr",		SPCD(0x00,0x00A3), BASE, ARG_NONE },
+  { "insqhiqr",		SPCD(0x00,0x00A4), BASE, ARG_NONE },
+  { "insqtiqr",		SPCD(0x00,0x00A5), BASE, ARG_NONE },
+  { "remqhilr",		SPCD(0x00,0x00A6), BASE, ARG_NONE },
+  { "remqtilr",		SPCD(0x00,0x00A7), BASE, ARG_NONE },
+  { "remqhiqr",		SPCD(0x00,0x00A8), BASE, ARG_NONE },
+  { "remqtiqr",		SPCD(0x00,0x00A9), BASE, ARG_NONE },
+  { "gentrap",		SPCD(0x00,0x00AA), BASE, ARG_NONE },
+  { "dbgstop",		SPCD(0x00,0x00AD), BASE, ARG_NONE },
+  { "clrfen",		SPCD(0x00,0x00AE), BASE, ARG_NONE },
+};
+
+const struct alpha_opcode alpha_pal_unix_opcodes[] = {
+  { "halt",		SPCD(0x00,0x0000), BASE, ARG_NONE },
+  { "cflush",		SPCD(0x00,0x0001), BASE, ARG_NONE },
+  { "draina",		SPCD(0x00,0x0002), BASE, ARG_NONE },
+  { "cserve",		SPCD(0x00,0x0009), BASE, ARG_NONE },
+  { "swppal",		SPCD(0x00,0x000A), BASE, ARG_NONE },
+  { "wripir",		SPCD(0x00,0x000D), BASE, ARG_NONE },
+  { "rdmces",		SPCD(0x00,0x0010), BASE, ARG_NONE },
+  { "wrmces",		SPCD(0x00,0x0011), BASE, ARG_NONE },
+  { "wrfen",		SPCD(0x00,0x002B), BASE, ARG_NONE },
+  { "wrvptptr",		SPCD(0x00,0x002D), BASE, ARG_NONE },
+  { "swpctx",		SPCD(0x00,0x0030), BASE, ARG_NONE },
+  { "wrval",		SPCD(0x00,0x0031), BASE, ARG_NONE },
+  { "rdval",		SPCD(0x00,0x0032), BASE, ARG_NONE },
+  { "tbi",		SPCD(0x00,0x0033), BASE, ARG_NONE },
+  { "wrent",		SPCD(0x00,0x0034), BASE, ARG_NONE },
+  { "swpipl",		SPCD(0x00,0x0035), BASE, ARG_NONE },
+  { "rdps",		SPCD(0x00,0x0036), BASE, ARG_NONE },
+  { "wrkgp",		SPCD(0x00,0x0037), BASE, ARG_NONE },
+  { "wrusp",		SPCD(0x00,0x0038), BASE, ARG_NONE },
+  { "wrperfmon",		SPCD(0x00,0x0039), BASE, ARG_NONE },
+  { "rdusp",		SPCD(0x00,0x003A), BASE, ARG_NONE },
+  { "whami",		SPCD(0x00,0x003C), BASE, ARG_NONE },
+  { "retsys",		SPCD(0x00,0x003D), BASE, ARG_NONE },
+  { "wtint",		SPCD(0x00,0x003E), BASE, ARG_NONE },
+  { "rti",		SPCD(0x00,0x003F), BASE, ARG_NONE },
+  { "bpt",		SPCD(0x00,0x0080), BASE, ARG_NONE },
+  { "bugchk",		SPCD(0x00,0x0081), BASE, ARG_NONE },
+  { "callsys",		SPCD(0x00,0x0083), BASE, ARG_NONE },
+  { "imb",		SPCD(0x00,0x0086), BASE, ARG_NONE },
+  { "urti",		SPCD(0x00,0x0092), BASE, ARG_NONE },
+  { "rdunique",		SPCD(0x00,0x009E), BASE, ARG_NONE },
+  { "wrunique",		SPCD(0x00,0x009F), BASE, ARG_NONE },
+  { "gentrap",		SPCD(0x00,0x00AA), BASE, ARG_NONE },
+  { "dbgstop",		SPCD(0x00,0x00AD), BASE, ARG_NONE },
+  { "clrfen",		SPCD(0x00,0x00AE), BASE, ARG_NONE },
+};
+
+const struct alpha_opcode alpha_pal_nt_opcodes[] = {
+  { "halt",		SPCD(0x00,0x0000), BASE, ARG_NONE },
+  { "restart",		SPCD(0x00,0x0001), BASE, ARG_NONE },
+  { "draina",		SPCD(0x00,0x0002), BASE, ARG_NONE },
+  { "reboot",		SPCD(0x00,0x0003), BASE, ARG_NONE },
+  { "initpal",		SPCD(0x00,0x0004), BASE, ARG_NONE },
+  { "wrentry",		SPCD(0x00,0x0005), BASE, ARG_NONE },
+  { "swpirql",		SPCD(0x00,0x0006), BASE, ARG_NONE },
+  { "rdirql",		SPCD(0x00,0x0007), BASE, ARG_NONE },
+  { "di",		SPCD(0x00,0x0008), BASE, ARG_NONE },
+  { "ei",		SPCD(0x00,0x0009), BASE, ARG_NONE },
+  { "swppal",		SPCD(0x00,0x000A), BASE, ARG_NONE },
+  { "ssir",		SPCD(0x00,0x000C), BASE, ARG_NONE },
+  { "csir",		SPCD(0x00,0x000D), BASE, ARG_NONE },
+  { "rfe",		SPCD(0x00,0x000E), BASE, ARG_NONE },
+  { "retsys",		SPCD(0x00,0x000F), BASE, ARG_NONE },
+  { "swpctx",		SPCD(0x00,0x0010), BASE, ARG_NONE },
+  { "swpprocess",	SPCD(0x00,0x0011), BASE, ARG_NONE },
+  { "rdmes",		SPCD(0x00,0x0012), BASE, ARG_NONE },
+  { "wrmces",		SPCD(0x00,0x0013), BASE, ARG_NONE },
+  { "tbia",		SPCD(0x00,0x0014), BASE, ARG_NONE },
+  { "tbis",		SPCD(0x00,0x0015), BASE, ARG_NONE },
+  { "dtbis",		SPCD(0x00,0x0016), BASE, ARG_NONE },
+  { "tbisasn",		SPCD(0x00,0x0017), BASE, ARG_NONE },
+  { "rdksp",		SPCD(0x00,0x0018), BASE, ARG_NONE },
+  { "swpksp",		SPCD(0x00,0x0019), BASE, ARG_NONE },
+  { "rdpsr",		SPCD(0x00,0x001A), BASE, ARG_NONE },
+  { "rdpcr",		SPCD(0x00,0x001C), BASE, ARG_NONE },
+  { "rdthread",		SPCD(0x00,0x001E), BASE, ARG_NONE },
+  { "tbim",		SPCD(0x00,0x0020), BASE, ARG_NONE },
+  { "tbimasn",		SPCD(0x00,0x0021), BASE, ARG_NONE },
+  { "ealnfix",		SPCD(0x00,0x0024), BASE, ARG_NONE },
+  { "dalnfix",		SPCD(0x00,0x0025), BASE, ARG_NONE },
+  { "rdcounters",	SPCD(0x00,0x0030), BASE, ARG_NONE },
+  { "rdstate",		SPCD(0x00,0x0031), BASE, ARG_NONE },
+  { "wrperfmon",	SPCD(0x00,0x0032), BASE, ARG_NONE },
+  { "initpcr",		SPCD(0x00,0x0037), BASE, ARG_NONE },
+  { "bpt",		SPCD(0x00,0x0080), BASE, ARG_NONE },
+  { "callsys",		SPCD(0x00,0x0083), BASE, ARG_NONE },
+  { "imb",		SPCD(0x00,0x0086), BASE, ARG_NONE },
+  { "gentrap",		SPCD(0x00,0x00AA), BASE, ARG_NONE },
+  { "rdteb",		SPCD(0x00,0x00AB), BASE, ARG_NONE },
+  { "kbpt",		SPCD(0x00,0x00AC), BASE, ARG_NONE },
+  { "callkd",		SPCD(0x00,0x00AD), BASE, ARG_NONE },
+};
+
 const struct alpha_opcode alpha_opcodes[] = {
   { "halt",		SPCD(0x00,0x0000), BASE, ARG_NONE },
   { "draina",		SPCD(0x00,0x0002), BASE, ARG_NONE },
+  { "swppal",		SPCD(0x00,0x000a), BASE, ARG_NONE },
   { "bpt",		SPCD(0x00,0x0080), BASE, ARG_NONE },
   { "bugchk",		SPCD(0x00,0x0081), BASE, ARG_NONE },
   { "callsys",		SPCD(0x00,0x0083), BASE, ARG_NONE },
@@ -1562,16 +1745,14 @@ const struct alpha_opcode alpha_opcodes[] = {
 
   { "hw_rei",		SPCD(0x1E,0x3FF8000), EV4|EV5, ARG_NONE },
   { "hw_rei_stall",	SPCD(0x1E,0x3FFC000), EV5, ARG_NONE },
-  { "hw_jmp", 		EV6HWMBR(0x1E,0x0), EV6, { ZA, PRB, EV6HWJMPHINT } },
-  { "hw_jsr", 		EV6HWMBR(0x1E,0x2), EV6, { ZA, PRB, EV6HWJMPHINT } },
-  { "hw_ret", 		EV6HWMBR(0x1E,0x4), EV6, { ZA, PRB } },
-  { "hw_jcr", 		EV6HWMBR(0x1E,0x6), EV6, { ZA, PRB } },
-  { "hw_coroutine",	EV6HWMBR(0x1E,0x6), EV6, { ZA, PRB } }, /* alias */
-  { "hw_jmp/stall",	EV6HWMBR(0x1E,0x1), EV6, { ZA, PRB, EV6HWJMPHINT } },
-  { "hw_jsr/stall", 	EV6HWMBR(0x1E,0x3), EV6, { ZA, PRB, EV6HWJMPHINT } },
-  { "hw_ret/stall",	EV6HWMBR(0x1E,0x5), EV6, { ZA, PRB } },
-  { "hw_jcr/stall", 	EV6HWMBR(0x1E,0x7), EV6, { ZA, PRB } },
-  { "hw_coroutine/stall", EV6HWMBR(0x1E,0x7), EV6, { ZA, PRB } }, /* alias */
+  { "hw_ret/jmp", 	EV6HWMBR(0x1E,0x0), EV6, { ZA, PRB, EV6HWJMPHINT } },
+  { "hw_ret/jsr", 	EV6HWMBR(0x1E,0x2), EV6, { ZA, PRB, EV6HWJMPHINT } },
+  { "hw_ret/ret", 	EV6HWMBR(0x1E,0x4), EV6, { ZA, PRB } },
+  { "hw_ret/co", 	EV6HWMBR(0x1E,0x6), EV6, { ZA, PRB } },
+  { "hw_rets/jmp",	EV6HWMBR(0x1E,0x1), EV6, { ZA, PRB, EV6HWJMPHINT } },
+  { "hw_rets/jsr", 	EV6HWMBR(0x1E,0x3), EV6, { ZA, PRB, EV6HWJMPHINT } },
+  { "hw_rets/ret",	EV6HWMBR(0x1E,0x5), EV6, { ZA, PRB } },
+  { "hw_rets/co", 	EV6HWMBR(0x1E,0x7), EV6, { ZA, PRB } },
   { "pal1e",		PCD(0x1E), BASE, ARG_PCD },
 
   { "hw_stl",		EV4HWMEM(0x1F,0x0), EV4, ARG_EV4HWMEM },
@@ -1732,7 +1913,63 @@ const struct alpha_opcode alpha_opcodes[] = {
   { "bgt",		BRA(0x3F), BASE, ARG_BRA },
 };
 
-const unsigned alpha_num_opcodes = sizeof(alpha_opcodes)/sizeof(*alpha_opcodes);
+static const char *ev6_ipr_names[] = {
+    "ITB_TAG",     "ITB_PTE",     "ITB_IAP",     "ITB_IA",       "ITB_IS",
+    "PMPC",        "EXC_ADDR",    "IVA_FORM",    "IER_CM",       "CM",
+    "IER",         "IER_CM",      "SIRR",        "ISUM",         "HW_INT_CLR",
+    "EXC_SUM",     "PAL_BASE",    "I_CTL",       "IC_FLUSH_ASM", "IC_FLUSH",
+    "PCTR_CTL",    "CLR_MAP",     "I_STAT",      "SLEEP",        "<0001.1000>",
+    "<0001.1001>", "<0001.1010>", "<0001.1011>", "<0001.1100>",  "<0001.1101>",
+    "<0001.1110>", "<0001.1111>", "DTB_TAG0",    "DTB_PTE0",     "<0010.0010>",
+    "<0010.0011>", "DTB_IS0",     "DTB_ASN0",    "DTB_ALTMODE",  "MM_STAT",
+    "M_CTL",       "DC_CTL",      "DC_STAT",     "C_DATA",       "C_SHFT",
+    "M_FIX",       "<0010.1110>", "<0010.1111>", "<0011.0000>",  "<0011.0001>",
+    "<0011.0010>", "<0011.0011>", "<0011.0100>", "<0010.0101>",  "<0010.0110>",
+    "<0010.0111>", "<0011.1000>", "<0011.1001>", "<0011.1010>",  "<0011.1011>",
+    "<0011.1100>", "<0010.1101>", "<0010.1110>", "<0010.1111>",  "PCTX.00000",
+    "PCTX.00001",  "PCTX.00010",  "PCTX.00011",  "PCTX.00100",   "PCTX.00101",
+    "PCTX.00110",  "PCTX.00111",  "PCTX.01000",  "PCTX.01001",   "PCTX.01010",
+    "PCTX.01011",  "PCTX.01100",  "PCTX.01101",  "PCTX.01110",   "PCTX.01111",
+    "PCTX.10000",  "PCTX.10001",  "PCTX.10010",  "PCTX.10011",   "PCTX.10100",
+    "PCTX.10101",  "PCTX.10110",  "PCTX.10111",  "PCTX.11000",   "PCTX.11001",
+    "PCTX.11010",  "PCTX.11011",  "PCTX.11100",  "PCTX.11101",   "PCTX.11110",
+    "PCTX.11111",  "PCTX.00000",  "PCTX.00001",  "PCTX.00010",   "PCTX.00011",
+    "PCTX.00100",  "PCTX.00101",  "PCTX.00110",  "PCTX.00111",   "PCTX.01000",
+    "PCTX.01001",  "PCTX.01010",  "PCTX.01011",  "PCTX.01100",   "PCTX.01101",
+    "PCTX.01110",  "PCTX.01111",  "PCTX.10000",  "PCTX.10001",   "PCTX.10010",
+    "PCTX.10011",  "PCTX.10100",  "PCTX.10101",  "PCTX.10110",   "PCTX.10111",
+    "PCTX.11000",  "PCTX.11001",  "PCTX.11010",  "PCTX.11011",   "PCTX.11100",
+    "PCTX.11101",  "PCTX.11110",  "PCTX.11111",  "<1000.0000>",  "<1000.0001>",
+    "<1000.0010>", "<1000.0011>", "<1000.0100>", "<1000.0101>",  "<1000.0110>",
+    "<1000.0111>", "<1000.1000>", "<1000.1001>", "<1000.1010>",  "<1000.1011>",
+    "<1000.1100>", "<1000.1101>", "<1000.1110>", "<1000.1111>",  "<1001.0000>",
+    "<1001.0001>", "<1001.0010>", "<1001.0011>", "<1001.0100>",  "<1001.0101>",
+    "<1001.0110>", "<1001.0111>", "<1001.1000>", "<1001.1001>",  "<1001.1010>",
+    "<1001.1011>", "<1001.1100>", "<1001.1101>", "<1001.1110>",  "<1001.1111>",
+    "DTB_TAG1",    "DTB_PTE1",    "DTB_IAP",     "DTB_IA",       "DTB_IS1",
+    "DTB_ASN1",    "<1010.0110>", "<1010.0111>", "<1010.1000>",  "<1010.1001>",
+    "<1010.1010>", "<1010.1011>", "<1010.1100>", "<1010.1101>",  "<1010.1110>",
+    "<1010.1111>", "<1011.0000>", "<1011.0001>", "<1011.0010>",  "<1011.0011>",
+    "<1011.0100>", "<1011.0101>", "<1011.0110>", "<1011.0111>",  "<1011.1000>",
+    "<1011.1001>", "<1011.1010>", "<1011.1011>", "<1011.1100>",  "<1011.1101>",
+    "<1011.1110>", "<1011.1111>", "CC",          "CC_CTL",       "VA",
+    "VA_FORM",     "VA_CTL",      "<1100.0101>", "<1100.0110>",  "<1100.0111>",
+    "<1100.1000>", "<1100.1001>", "<1100.1010>", "<1100.1011>",  "<1100.1100>",
+    "<1100.1101>", "<1100.1110>", "<1100.1111>", "<1101.0000>",  "<1101.0001>",
+    "<1101.0010>", "<1101.0011>", "<1101.0100>", "<1101.0101>",  "<1101.0110>",
+    "<1101.0111>", "<1101.1000>", "<1101.1001>", "<1101.1010>",  "<1101.1011>",
+    "<1101.1100>", "<1101.1101>", "<1101.1110>", "<1101.1111>",  "<1110.0000>",
+    "<1110.0001>", "<1110.0010>", "<1110.0011>", "<1110.0100>",  "<1110.0101>",
+    "<1110.0110>", "<1110.0111>", "<1110.1000>", "<1110.1001>",  "<1110.1010>",
+    "<1110.1011>", "<1110.1100>", "<1110.1101>", "<1110.1110>",  "<1110.1111>",
+    "<1111.0000>", "<1111.0001>", "<1111.0010>", "<1111.0011>",  "<1111.0100>",
+    "<1111.0101>", "<1111.0110>", "<1111.0111>", "<1111.1000>",  "<1111.1001>",
+    "<1111.1010>", "<1111.1011>", "<1111.1100>", "<1111.1101>",  "<1111.1110>",
+    "<1111.1111>",
+};
+
+
+const unsigned alpha_num_opcodes = ARRAY_SIZE (alpha_opcodes);
 
 /* OSF register names.  */
 
@@ -1747,6 +1984,7 @@ static const char * const osf_regnames[64] = {
   "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31"
 };
 
+#if 0
 /* VMS register names.  */
 
 static const char * const vms_regnames[64] = {
@@ -1759,6 +1997,7 @@ static const char * const vms_regnames[64] = {
   "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23",
   "F24", "F25", "F26", "F27", "F28", "F29", "F30", "FZ"
 };
+#endif
 
 /* Disassemble Alpha instructions.  */
 
@@ -1767,6 +2006,7 @@ print_insn_alpha (bfd_vma memaddr, struct disassemble_info *info)
 {
   static const struct alpha_opcode *opcode_index[AXP_NOPS+1];
   const char * const * regnames;
+  const struct alpha_opcode *palcode, *palcode_end;
   const struct alpha_opcode *opcode, *opcode_end;
   const unsigned char *opindex;
   unsigned insn, op, isa_mask;
@@ -1787,10 +2027,31 @@ print_insn_alpha (bfd_vma memaddr, struct disassemble_info *info)
       opcode_index[op] = opcode;
     }
 
+#if 0
   if (info->flavour == bfd_target_evax_flavour)
     regnames = vms_regnames;
   else
     regnames = osf_regnames;
+#else
+  regnames = osf_regnames;
+#endif
+
+  if (info->flavour == bfd_target_evax_flavour)
+    {
+      palcode = alpha_pal_vms_opcodes;
+      palcode_end = alpha_pal_vms_opcodes + ARRAY_SIZE (alpha_pal_vms_opcodes);
+    }
+  else if (info->flavour == bfd_target_coff_flavour)
+    {
+      palcode = alpha_pal_nt_opcodes;
+      palcode_end = alpha_pal_nt_opcodes + ARRAY_SIZE (alpha_pal_nt_opcodes);
+    }
+  else
+    {
+      palcode = alpha_pal_unix_opcodes;
+      palcode_end
+          = alpha_pal_unix_opcodes + ARRAY_SIZE (alpha_pal_unix_opcodes);
+    }
 
   isa_mask = AXP_OPCODE_NOPAL;
   switch (info->mach)
@@ -1820,6 +2081,20 @@ print_insn_alpha (bfd_vma memaddr, struct disassemble_info *info)
 
   /* Get the major opcode of the instruction.  */
   op = AXP_OP (insn);
+
+  /* Choose the appropriate instruction based on the PALcode flavour, if
+     at all possible.  */
+  for (opcode = palcode; opcode < palcode_end; ++opcode)
+    {
+      if ((insn ^ opcode->opcode) & opcode->mask)
+	continue;
+
+      if (!(opcode->flags & isa_mask))
+	continue;
+
+      /* The instruction is valid.  */
+      goto found;
+    }
 
   /* Find the first match in the opcode table.  */
   opcode_end = opcode_index[op + 1];
@@ -1904,6 +2179,9 @@ found:
 	(*info->print_address_func) (memaddr + 4 + value, info);
       else if (operand->flags & AXP_OPERAND_SIGNED)
 	(*info->fprintf_func) (info->stream, "%d", value);
+      else if (operand->flags & AXP_OPERAND_IPR &&
+	       info->mach == bfd_mach_alpha_ev6)
+	(*info->fprintf_func) (info->stream, "%s", ev6_ipr_names[value & 0xff]);
       else
 	(*info->fprintf_func) (info->stream, "%#x", value);
 

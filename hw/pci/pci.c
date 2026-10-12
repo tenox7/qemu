@@ -674,6 +674,20 @@ const char *pci_root_bus_path(PCIDevice *dev)
     return rootbus->qbus.name;
 }
 
+int pci_root_bus_hose(PCIDevice *dev)
+{
+    PCIBus *rootbus = pci_device_root_bus(dev);
+    PCIHostState *host_bridge = PCI_HOST_BRIDGE(rootbus->qbus.parent);
+    PCIHostBridgeClass *hc = PCI_HOST_BRIDGE_GET_CLASS(host_bridge);
+
+    assert(host_bridge->bus == rootbus);
+
+    if (hc->hose_number) {
+        return (*hc->hose_number)(host_bridge);
+    }
+    return -1;
+}
+
 bool pci_bus_bypass_iommu(PCIBus *bus)
 {
     PCIBus *rootbus = bus;

@@ -1,27 +1,26 @@
+gen = decodetree.process('insns.decode')
+
 alpha_ss = ss.source_set()
+alpha_ss.add(gen)
 alpha_ss.add(files(
   'cpu.c',
   'fpu_helper.c',
+  'gdbstub.c',
   'helper.c',
-  'clk_helper.c',
+  'op_helper.c',
   'int_helper.c',
-  'mem_helper.c',
+  'tlb_helper.c',
   'translate.c',
+  'monitor.c',
   'vax_helper.c',
 ))
 
-alpha_user_ss = ss.source_set()
-alpha_user_ss.add(files(
-  'gdbstub.c',
-))
-
-alpha_common_system_ss = ss.source_set()
-alpha_common_system_ss.add(files(
-  'gdbstub.c',
+alpha_system_ss = ss.source_set()
+alpha_system_ss.add(files(
+  'alpha-qmp-cmds.c',
+  'arch_dump.c',
   'machine.c',
-  'sys_helper.c',
 ))
 
 target_arch += {'alpha': alpha_ss}
-target_user_arch += {'alpha': alpha_user_ss}
-target_common_system_arch += {'alpha': alpha_common_system_ss}
+target_system_arch += {'alpha': alpha_system_ss}

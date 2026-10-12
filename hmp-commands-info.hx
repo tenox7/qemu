@@ -107,6 +107,22 @@ SRST
 ERST
 
     {
+        .name       = "iprs",
+        .args_type  = "cpustate_all:-a,vcpu:i?",
+        .params     = "[-a|vcpu]",
+        .help       = "show the cpu internal processor registers (-a: show IPR info for all cpus;"
+                      " vcpu: specific vCPU to query; show the current CPU's IPRs if"
+                      " no argument is specified)",
+        .cmd        = hmp_info_iprs,
+        .arch_bitmask = QEMU_ARCH_ALPHA,
+    },
+
+SRST
+  ``info iprs``
+    Show the cpu internal processor registers.
+ERST
+
+    {
         .name       = "lapic",
         .args_type  = "apic-id:i?",
         .params     = "[apic-id]",
@@ -193,7 +209,8 @@ ERST
         .help       = "show virtual to physical memory mappings",
         .cmd        = hmp_info_tlb,
         .arch_bitmask = QEMU_ARCH_I386 | QEMU_ARCH_SH4 | QEMU_ARCH_SPARC \
-                        | QEMU_ARCH_PPC | QEMU_ARCH_XTENSA | QEMU_ARCH_M68K,
+                        | QEMU_ARCH_PPC | QEMU_ARCH_XTENSA | QEMU_ARCH_M68K \
+                        | QEMU_ARCH_ALPHA,
     },
 
 SRST

@@ -1,0 +1,1106 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * QEMU Alpha IPRs.
+ */
+
+#ifndef _ALPHA_CPU_IPR_H
+#define _ALPHA_CPU_IPR_H
+
+#include "hw/core/registerfields.h"
+
+/* Bit definitions for CC */
+FIELD(CC, COUNTER_BOT, 0, 4)
+FIELD(CC, COUNTER_FULL, 0, 32)
+FIELD(CC, COUNTER, 4, 28)
+FIELD(CC, OFFSET, 32, 32)
+
+/* Bit definitions for CC_CTL */
+FIELD(CC_CTL, COUNTER, 4, 28)
+FIELD(CC_CTL, CC_ENA, 32, 1)
+
+/*
+ * EV4 specific IPR field definitions.
+ */
+
+/* Bit definitions for EV4_TB_CTL */
+FIELD(EV4_TB_CTL, GH, 5, 2)
+
+/* Bit definitions for EV4_DTB_PTE */
+FIELD(EV4_DTB_PTE, FOR, 1, 1)
+FIELD(EV4_DTB_PTE, FOW, 2, 1)
+FIELD(EV4_DTB_PTE, ASM, 4, 1)
+FIELD(EV4_DTB_PTE, KRE, 8, 1)
+FIELD(EV4_DTB_PTE, ERE, 9, 1)
+FIELD(EV4_DTB_PTE, SRE, 10, 1)
+FIELD(EV4_DTB_PTE, URE, 11, 1)
+FIELD(EV4_DTB_PTE, KWE, 12, 1)
+FIELD(EV4_DTB_PTE, EWE, 13, 1)
+FIELD(EV4_DTB_PTE, SWE, 14, 1)
+FIELD(EV4_DTB_PTE, UWE, 15, 1)
+FIELD(EV4_DTB_PTE, PFN, 32, 21)
+
+/* Bit definitions for EV4_MMCSR */
+FIELD(EV4_MMCSR, WR, 0, 1)
+FIELD(EV4_MMCSR, ACV, 1, 1)
+FIELD(EV4_MMCSR, FOR, 2, 1)
+FIELD(EV4_MMCSR, FOW, 3, 1)
+FIELD(EV4_MMCSR, RA, 4, 5)
+FIELD(EV4_MMCSR, OPCODE, 9, 6)
+
+/* Bit definitions for EV4_DTBIS */
+FIELD(EV4_DTBIS, VA, 13, 30)
+
+/* Bit definitions for EV4_BIU_ADDR */
+FIELD(EV4_BIU_ADDR, RB_LL, 2, 2)
+FIELD(EV4_BIU_ADDR, ADDRESS, 5, 29)
+
+/* Bit definitions for EV4_BIU_STAT */
+FIELD(EV4_BIU_STAT, BIU_HERR, 0, 1)
+FIELD(EV4_BIU_STAT, BIU_SERR, 1, 1)
+FIELD(EV4_BIU_STAT, BC_TPERR, 2, 1)
+FIELD(EV4_BIU_STAT, BC_TCPERR, 3, 1)
+FIELD(EV4_BIU_STAT, BIU_CMD, 4, 3)
+FIELD(EV4_BIU_STAT, BIU_SEO, 7, 1)
+FIELD(EV4_BIU_STAT, FILL_ECC, 8, 1)
+FIELD(EV4_BIU_STAT, FILL_CRD, 9, 1)
+FIELD(EV4_BIU_STAT, FILL_DPERR, 10, 1)
+FIELD(EV4_BIU_STAT, FILL_IRD, 11, 1)
+FIELD(EV4_BIU_STAT, FILL_QW, 12, 2)
+FIELD(EV4_BIU_STAT, FILL_SEO, 14, 1)
+
+/* Bit definitions for EV4_DC_STAT */
+FIELD(EV4_DC_STAT, CHIP_ID, 0, 3)
+FIELD(EV4_DC_STAT, DC_HIT, 3, 1)
+
+/* Bit definitions for EV4_FILL_ADDR */
+FIELD(EV4_FILL_ADDR, PA_UNP, 2, 2)
+FIELD(EV4_FILL_ADDR, ADDRESS, 5, 29)
+
+/* Bit definitions for EV4_ABOX_CTL */
+FIELD(EV4_ABOX_CTL, WB_DIS, 0, 1)
+FIELD(EV4_ABOX_CTL, MCHK_EN, 1, 1)
+FIELD(EV4_ABOX_CTL, CRD_EN, 2, 1)
+FIELD(EV4_ABOX_CTL, IC_SBUF_EN, 3, 1)
+FIELD(EV4_ABOX_CTL, SPE, 4, 2)
+FIELD(EV4_ABOX_CTL, SPE_1, 4, 1)
+FIELD(EV4_ABOX_CTL, SPE_2, 5, 1)
+FIELD(EV4_ABOX_CTL, EMD_EN, 6, 1)
+FIELD(EV4_ABOX_CTL, DC_ENA, 10, 1)
+FIELD(EV4_ABOX_CTL, DC_FHIT, 11, 1)
+FIELD(EV4_ABOX_CTL, DC_16K, 12, 1)
+FIELD(EV4_ABOX_CTL, F_TAG_ERR, 13, 1)
+FIELD(EV4_ABOX_CTL, NOCHK_PAR, 14, 1)
+
+/* Bit definitions for EV4_ALT_MODE */
+FIELD(EV4_ALT_MODE, AM, 3, 2)
+
+/* Bit definitions for EV4_BIU_CTL */
+FIELD(EV4_BIU_CTL, BC_ENA, 0, 1)
+FIELD(EV4_BIU_CTL, ECC, 1, 1)
+FIELD(EV4_BIU_CTL, OE, 2, 1)
+FIELD(EV4_BIU_CTL, BC_FHIT, 3, 1)
+FIELD(EV4_BIU_CTL, BC_RD_SPD, 4, 4)
+FIELD(EV4_BIU_CTL, BC_WR_SPD, 8, 4)
+FIELD(EV4_BIU_CTL, BC_WE_CTL, 13, 16)
+FIELD(EV4_BIU_CTL, BC_SIZE, 28, 3)
+FIELD(EV4_BIU_CTL, BAD_TCP, 31, 1)
+FIELD(EV4_BIU_CTL, BC_PA_DIS, 32, 4)
+FIELD(EV4_BIU_CTL, BAD_DP, 36, 1)
+FIELD(EV4_BIU_CTL, BYTE_PARITY, 37, 1)
+FIELD(EV4_BIU_CTL, IMAP_EN, 39, 1)
+
+/* Bit definitions for EV4_FILL_SYNDROME */
+FIELD(EV4_FILL_SYNDROME, LO, 0, 7)
+FIELD(EV4_FILL_SYNDROME, HI, 7, 7)
+
+/* Bit definitions for EV4_BC_TAG */
+FIELD(EV4_BC_TAG, HIT, 0, 1)
+FIELD(EV4_BC_TAG, TAGCTL_P, 1, 1)
+FIELD(EV4_BC_TAG, TAGCTL_D, 2, 1)
+FIELD(EV4_BC_TAG, TAGCTL_S, 3, 1)
+FIELD(EV4_BC_TAG, TAGCTL_V, 4, 1)
+FIELD(EV4_BC_TAG, TAG, 5, 17)
+FIELD(EV4_BC_TAG, TAGADR_P, 22, 1)
+
+/* Bit definitions for EV4_TB_TAG */
+FIELD(EV4_TB_TAG, VA, 13, 30)
+
+/* Bit definitions for EV4_ITB_PTE */
+FIELD(EV4_ITB_PTE, ASM, 4, 1)
+FIELD(EV4_ITB_PTE, KRE, 8, 1)
+FIELD(EV4_ITB_PTE, ERE, 9, 1)
+FIELD(EV4_ITB_PTE, SRE, 10, 1)
+FIELD(EV4_ITB_PTE, URE, 11, 1)
+FIELD(EV4_ITB_PTE, PFN, 32, 21)
+
+/* Bit definitions for EV4_ICCSR */
+FIELD(EV4_ICCSR, ASN, 47, 6)
+FIELD(EV4_ICCSR, PME1, 45, 1)
+FIELD(EV4_ICCSR, PME0, 44, 1)
+FIELD(EV4_ICCSR, FPE, 42, 1)
+FIELD(EV4_ICCSR, MAP, 41, 1)
+FIELD(EV4_ICCSR, HWE, 40, 1)
+FIELD(EV4_ICCSR, DI, 39, 1)
+FIELD(EV4_ICCSR, BHE, 38, 1)
+FIELD(EV4_ICCSR, JSE, 37, 1)
+FIELD(EV4_ICCSR, BPE, 36, 1)
+FIELD(EV4_ICCSR, PIPE, 35, 1)
+FIELD(EV4_ICCSR, MUX1, 32, 3)
+FIELD(EV4_ICCSR, MUX0, 8, 3)
+FIELD(EV4_ICCSR, PC0, 3, 1)
+FIELD(EV4_ICCSR, PC1, 0, 1)
+
+/* Bit definitions for EV4_SL_RCV */
+FIELD(EV4_SL_RCV, RCV, 3, 1)
+
+/* Bit definitions for EV4_ITBIS */
+FIELD(EV4_ITBIS, VA, 13, 30)
+
+/* Bit definitions for EV4_PS */
+FIELD(EV4_PS, CM, 3, 2)
+
+/* Bit definitions for EV4_EXC_SUM */
+FIELD(EV4_EXC_SUM, SWC, 2, 1)
+FIELD(EV4_EXC_SUM, INV, 3, 1)
+FIELD(EV4_EXC_SUM, DZE, 4, 1)
+FIELD(EV4_EXC_SUM, FOV, 5, 1)
+FIELD(EV4_EXC_SUM, UNF, 6, 1)
+FIELD(EV4_EXC_SUM, INE, 7, 1)
+FIELD(EV4_EXC_SUM, IOV, 8, 1)
+FIELD(EV4_EXC_SUM, MSK, 33, 1)
+
+/* Bit definitions for EV4_PAL_BASE */
+FIELD(EV4_PAL_BASE, PAL_BASE, 14, 20)
+
+/* Bit definitions for EV4_HIRR */
+FIELD(EV4_HIRR, HWR, 1, 1)
+FIELD(EV4_HIRR, SWR, 2, 1)
+FIELD(EV4_HIRR, ATR, 3, 1)
+FIELD(EV4_HIRR, CRR, 4, 1)
+FIELD(EV4_HIRR, IRQ3, 5, 1)
+FIELD(EV4_HIRR, IRQ4, 6, 1)
+FIELD(EV4_HIRR, IRQ5, 7, 1)
+FIELD(EV4_HIRR, PC1, 8, 1)
+FIELD(EV4_HIRR, PC0, 9, 1)
+FIELD(EV4_HIRR, IRQ0, 10, 1)
+FIELD(EV4_HIRR, IRQ1, 11, 1)
+FIELD(EV4_HIRR, IRQ2, 12, 1)
+FIELD(EV4_HIRR, SLR, 13, 1)
+FIELD(EV4_HIRR, SIR, 14, 15)
+FIELD(EV4_HIRR, ASTK, 29, 1)
+FIELD(EV4_HIRR, ASTE, 30, 1)
+FIELD(EV4_HIRR, ASTS, 31, 1)
+FIELD(EV4_HIRR, ASTU, 32, 1)
+
+/* Bit definitions for EV4_SIRR */
+FIELD(EV4_SIRR, SIR, 33, 15)
+
+/* Bit definitions for EV4_ASTRR */
+FIELD(EV4_ASTRR, ASTRR, 48, 4)
+FIELD(EV4_ASTRR, KAR, 48, 1)
+FIELD(EV4_ASTRR, EAR, 49, 1)
+FIELD(EV4_ASTRR, SAR, 50, 1)
+FIELD(EV4_ASTRR, UAR, 51, 1)
+
+/* Bit definitions for EV4_HIER */
+FIELD(EV4_HIER, CRE, 2, 1)
+FIELD(EV4_HIER, PC0, 8, 1)
+FIELD(EV4_HIER, HIER, 9, 6)
+FIELD(EV4_HIER, PC1, 15, 1)
+FIELD(EV4_HIER, SLE, 32, 1)
+
+/* Bit definitions for EV4_SIER */
+FIELD(EV4_SIER, SIER, 33, 15)
+
+/* Bit definitions for EV4_ASTER */
+FIELD(EV4_ASTER, ASTER, 48, 4)
+FIELD(EV4_ASTER, KAE, 48, 1)
+FIELD(EV4_ASTER, EAE, 49, 1)
+FIELD(EV4_ASTER, SAE, 50, 1)
+FIELD(EV4_ASTER, UAE, 51, 1)
+
+/* Bit definitions for EV4_SL_CLR */
+FIELD(EV4_SL_CLR, CRD, 2, 1)
+FIELD(EV4_SL_CLR, PC0, 8, 1)
+FIELD(EV4_SL_CLR, PC1, 15, 1)
+FIELD(EV4_SL_CLR, SLC, 32, 1)
+
+/* Bit definitions for EV4_SL_XMIT */
+FIELD(EV4_SL_XMIT, TMT, 4, 1)
+
+/*
+ * EV4 specific IPR index definitions.
+ */
+
+#define EV4_IPR_STALL               0x00        /* 0000 0000 */
+
+#define EV4_IPR_TB_CTL              0x40        /* 0100 0000 */
+#define EV4_IPR_DTB_PTE             0x42        /* 0100 0010 */
+#define EV4_IPR_DTB_PTE_TEMP        0x43        /* 0100 0011 */
+#define EV4_IPR_MMCSR               0x44        /* 0100 0100 */
+#define EV4_IPR_VA                  0x45        /* 0100 0101 */
+#define EV4_IPR_DTBZAP              0x46        /* 0100 0110 */
+#define EV4_IPR_DTBASM              0x47        /* 0100 0111 */
+#define EV4_IPR_DTBIS               0x48        /* 0100 1000 */
+#define EV4_IPR_BIU_ADDR            0x49        /* 0100 1001 */
+#define EV4_IPR_BIU_STAT            0x4A        /* 0100 1010 */
+#define EV4_IPR_DC_ADDR             0x4B        /* 0100 1011 */
+#define EV4_IPR_DC_STAT             0x4C        /* 0100 1100 */
+#define EV4_IPR_FILL_ADDR           0x4D        /* 0100 1101 */
+#define EV4_IPR_ABOX_CTL            0x4E        /* 0100 1110 */
+#define EV4_IPR_ALT_MODE            0x4F        /* 0100 1111 */
+
+#define EV4_IPR_CC                  0x50        /* 0101 0000 */
+#define EV4_IPR_CC_CTL              0x51        /* 0101 0001 */
+#define EV4_IPR_BIU_CTL             0x52        /* 0101 0010 */
+#define EV4_IPR_FILL_SYNDROME       0x53        /* 0101 0011 */
+#define EV4_IPR_BC_TAG              0x54        /* 0101 0100 */
+#define EV4_IPR_FLUSH_IC            0x55        /* 0101 0101 */
+#define EV4_IPR_INTR_FLAG           0x56        /* 0101 0110 */
+#define EV4_IPR_FLUSH_IC_ASM        0x57        /* 0101 0111 */
+#define EV4_IPR_LOCK_FLAG           0x58        /* 0101 1000 */
+
+#define EV4_IPR_TB_TAG              0x20        /* 0010 0000 */
+#define EV4_IPR_ITB_PTE             0x21        /* 0010 0001 */
+#define EV4_IPR_ICCSR               0x22        /* 0010 0010 */
+#define EV4_IPR_ITB_PTE_TEMP        0x23        /* 0010 0011 */
+#define EV4_IPR_EXC_ADDR            0x24        /* 0010 0100 */
+#define EV4_IPR_SL_RCV              0x25        /* 0010 0101 */
+#define EV4_IPR_ITBZAP              0x26        /* 0010 0110 */
+#define EV4_IPR_ITBASM              0x27        /* 0010 0111 */
+#define EV4_IPR_ITBIS               0x28        /* 0010 1000 */
+#define EV4_IPR_PS                  0x29        /* 0010 1001 */
+#define EV4_IPR_EXC_SUM             0x2A        /* 0010 1010 */
+#define EV4_IPR_PAL_BASE            0x2B        /* 0010 1011 */
+#define EV4_IPR_HIRR                0x2C        /* 0010 1100 */
+#define EV4_IPR_SIRR                0x2D        /* 0010 1101 */
+#define EV4_IPR_ASTRR               0x2E        /* 0010 1110 */
+#define EV4_IPR_HIER                0x30        /* 0011 0000 */
+#define EV4_IPR_SIER                0x31        /* 0011 0001 */
+#define EV4_IPR_ASTER               0x32        /* 0011 0010 */
+#define EV4_IPR_SL_CLR              0x33        /* 0011 0011 */
+#define EV4_IPR_SL_XMIT             0x36        /* 0011 0110 */
+#define EV4_IPR_ISSUE_CHK           0x3D        /* 0011 1101 */
+#define EV4_IPR_SINGLE_ISSUE        0x3E        /* 0011 1110 */
+#define EV4_IPR_DUAL_ISSUE          0x3F        /* 0011 1111 */
+
+#define EV4_IPR_PAL_R0              0x80        /* 1000 0000 */
+#define EV4_IPR_PAL_R1              0x81        /* 1000 0001 */
+#define EV4_IPR_PAL_R2              0x82        /* 1000 0010 */
+#define EV4_IPR_PAL_R3              0x83        /* 1000 0011 */
+#define EV4_IPR_PAL_R4              0x84        /* 1000 0100 */
+#define EV4_IPR_PAL_R5              0x85        /* 1000 0101 */
+#define EV4_IPR_PAL_R6              0x86        /* 1000 0110 */
+#define EV4_IPR_PAL_R7              0x87        /* 1000 0111 */
+#define EV4_IPR_PAL_R8              0x88        /* 1000 1000 */
+#define EV4_IPR_PAL_R9              0x89        /* 1000 1001 */
+#define EV4_IPR_PAL_R10             0x8A        /* 1000 1010 */
+#define EV4_IPR_PAL_R11             0x8B        /* 1000 1011 */
+#define EV4_IPR_PAL_R12             0x8C        /* 1000 1100 */
+#define EV4_IPR_PAL_R13             0x8D        /* 1000 1101 */
+#define EV4_IPR_PAL_R14             0x8E        /* 1000 1110 */
+#define EV4_IPR_PAL_R15             0x8F        /* 1000 1111 */
+#define EV4_IPR_PAL_R16             0x90        /* 1001 0000 */
+#define EV4_IPR_PAL_R17             0x91        /* 1001 0001 */
+#define EV4_IPR_PAL_R18             0x92        /* 1001 0010 */
+#define EV4_IPR_PAL_R19             0x93        /* 1001 0011 */
+#define EV4_IPR_PAL_R20             0x94        /* 1001 0100 */
+#define EV4_IPR_PAL_R21             0x95        /* 1001 0101 */
+#define EV4_IPR_PAL_R22             0x96        /* 1001 0110 */
+#define EV4_IPR_PAL_R23             0x97        /* 1001 0111 */
+#define EV4_IPR_PAL_R24             0x98        /* 1001 1000 */
+#define EV4_IPR_PAL_R25             0x99        /* 1001 1001 */
+#define EV4_IPR_PAL_R26             0x9A        /* 1001 1010 */
+#define EV4_IPR_PAL_R27             0x9B        /* 1001 1011 */
+#define EV4_IPR_PAL_R28             0x9C        /* 1001 1100 */
+#define EV4_IPR_PAL_R29             0x9D        /* 1001 1101 */
+#define EV4_IPR_PAL_R30             0x9E        /* 1001 1110 */
+#define EV4_IPR_PAL_R31             0x9F        /* 1001 1111 */
+
+/*
+ * EV5 specific IPR field definitions.
+ */
+
+/* Bit definitions for EV5_ISR */
+FIELD(EV5_ISR, ASTK, 0, 1)
+FIELD(EV5_ISR, ASTE, 1, 1)
+FIELD(EV5_ISR, ASTS, 2, 1)
+FIELD(EV5_ISR, ASTU, 3, 1)
+FIELD(EV5_ISR, SISR, 4, 15)
+FIELD(EV5_ISR, ATR, 19, 1)
+FIELD(EV5_ISR, IRQ, 20, 4)
+FIELD(EV5_ISR, I20, 20, 1)
+FIELD(EV5_ISR, I21, 21, 1)
+FIELD(EV5_ISR, I22, 22, 1)
+FIELD(EV5_ISR, I23, 23, 1)
+FIELD(EV5_ISR, PC, 27, 3)
+FIELD(EV5_ISR, PFL, 30, 1)
+FIELD(EV5_ISR, MCK, 31, 1)
+FIELD(EV5_ISR, CRD, 32, 1)
+FIELD(EV5_ISR, SLI, 33, 1)
+FIELD(EV5_ISR, HLT, 34, 1)
+
+/* Bit definitions for EV5_ITB_TAG */
+FIELD(EV5_ITB_TAG, VA, 13, 30)
+
+/* Bit definitions for EV5_ITB_PTE */
+FIELD(EV5_ITB_PTE, ASM, 4, 1)
+FIELD(EV5_ITB_PTE, GH, 5, 2)
+FIELD(EV5_ITB_PTE, KRE, 8, 1)
+FIELD(EV5_ITB_PTE, ERE, 9, 1)
+FIELD(EV5_ITB_PTE, SRE, 10, 1)
+FIELD(EV5_ITB_PTE, URE, 11, 1)
+FIELD(EV5_ITB_PTE, PFN, 32, 27)
+
+/* Bit definitions for EV5_ITB_PTE_TEMP */
+FIELD(EV5_ITB_PTE_TEMP, GH_0, 29, 1)
+FIELD(EV5_ITB_PTE_TEMP, GH_1, 30, 1)
+FIELD(EV5_ITB_PTE_TEMP, GH_2, 31, 1)
+
+/* Bit definitions for EV5_ITB_ASN */
+FIELD(EV5_ITB_ASN, ASN, 4, 7)
+
+/* Bit definitions for EV5_ITB_IS */
+FIELD(EV5_ITB_IS, VA, 13, 30)
+
+/* Bit definitions for EV5_SIRR */
+FIELD(EV5_SIRR, SIR, 4, 15)
+
+/* Bit definitions for EV5_ASTRR */
+FIELD(EV5_ASTRR, ASTRR, 0, 4)
+FIELD(EV5_ASTRR, KAR, 0, 1)
+FIELD(EV5_ASTRR, EAR, 1, 1)
+FIELD(EV5_ASTRR, SAR, 2, 1)
+FIELD(EV5_ASTRR, UAR, 3, 1)
+
+/* Bit definitions for EV5_ASTER */
+FIELD(EV5_ASTER, ASTER, 0, 4)
+FIELD(EV5_ASTER, KAE, 0, 1)
+FIELD(EV5_ASTER, EAE, 1, 1)
+FIELD(EV5_ASTER, SAE, 2, 1)
+FIELD(EV5_ASTER, UAE, 3, 1)
+
+/* Bit definitions for EV5_EXC_SUM */
+FIELD(EV5_EXC_SUM, SWC, 10, 1)
+FIELD(EV5_EXC_SUM, INV, 11, 1)
+FIELD(EV5_EXC_SUM, DZE, 12, 1)
+FIELD(EV5_EXC_SUM, FOV, 13, 1)
+FIELD(EV5_EXC_SUM, UNF, 14, 1)
+FIELD(EV5_EXC_SUM, INE, 15, 1)
+FIELD(EV5_EXC_SUM, IOV, 16, 1)
+
+/* Bit definitions for EV5_PAL_BASE */
+FIELD(EV5_PAL_BASE, PAL_BASE, 14, 26)
+
+/* Bit definitions for EV5_ICM */
+FIELD(EV5_ICM, CM, 3, 2)
+
+/* Bit definitions for EV5_IPL */
+FIELD(EV5_IPL, IPL, 0, 5)
+
+/* Bit definitions for EV5_INTID */
+FIELD(EV5_INTID, INTID, 0, 5)
+
+/* Bit definitions for EV5_IFAULT_VA_FORM */
+FIELD(EV5_IFAULT_VA_FORM, VA, 3, 30)
+FIELD(EV5_IFAULT_VA_FORM, VPTB, 33, 31)
+
+/* Bit definitions for EV5_IFAULT_VA_FORM_NT */
+FIELD(EV5_IFAULT_VA_FORM_NT, VA, 3, 19)
+FIELD(EV5_IFAULT_VA_FORM_NT, VPTB, 30, 34)
+
+/* Bit definitions for EV5_IVPTBR */
+FIELD(EV5_IVPTBR, VPTB, 30, 34)
+
+/* Bit definitions for EV5_HW_INT_CLR */
+FIELD(EV5_HW_INT_CLR, PC0C, 27, 1)
+FIELD(EV5_HW_INT_CLR, PC1C, 28, 1)
+FIELD(EV5_HW_INT_CLR, PC2C, 29, 1)
+FIELD(EV5_HW_INT_CLR, CRDC, 32, 1)
+FIELD(EV5_HW_INT_CLR, SLC, 33, 1)
+
+/* Bit definitions for EV5_SL_XMIT */
+FIELD(EV5_SL_XMIT, TMT, 7, 1)
+
+/* Bit definitions for EV5_SL_RCV */
+FIELD(EV5_SL_RCV, RCV, 6, 1)
+
+/* Bit definitions for EV5_ICSR */
+FIELD(EV5_ICSR, PMA, 8, 1)
+FIELD(EV5_ICSR, PMP, 9, 1)
+FIELD(EV5_ICSR, BYT, 17, 1)
+FIELD(EV5_ICSR, FMP, 18, 1)
+FIELD(EV5_ICSR, MVE, 19, 1)
+FIELD(EV5_ICSR, IMSK, 20, 4)
+FIELD(EV5_ICSR, IM0, 20, 1)
+FIELD(EV5_ICSR, IM1, 21, 1)
+FIELD(EV5_ICSR, IM2, 22, 1)
+FIELD(EV5_ICSR, IM3, 23, 1)
+FIELD(EV5_ICSR, TMM, 24, 1)
+FIELD(EV5_ICSR, TMD, 25, 1)
+FIELD(EV5_ICSR, FPE, 26, 1)
+FIELD(EV5_ICSR, HWE, 27, 1)
+FIELD(EV5_ICSR, SPE, 28, 2)
+FIELD(EV5_ICSR, SPE_1, 28, 1)
+FIELD(EV5_ICSR, SPE_2, 29, 1)
+FIELD(EV5_ICSR, SDE, 30, 1)
+FIELD(EV5_ICSR, CRDE, 32, 1)
+FIELD(EV5_ICSR, SLE, 33, 1)
+FIELD(EV5_ICSR, FMS, 34, 1)
+FIELD(EV5_ICSR, FBT, 35, 1)
+FIELD(EV5_ICSR, FBD, 36, 1)
+FIELD(EV5_ICSR, DBS, 37, 1)
+FIELD(EV5_ICSR, ISTA, 38, 1)
+FIELD(EV5_ICSR, TST, 39, 1)
+
+/* Bit definitions for EV5_IC_PERR */
+FIELD(EV5_IC_PERR, DPE, 11, 1)
+FIELD(EV5_IC_PERR, TPE, 12, 1)
+FIELD(EV5_IC_PERR, TMR, 13, 1)
+
+/* Bit definitions for EV5_PMCTR */
+FIELD(EV5_PMCTR, SEL2, 0, 4)
+FIELD(EV5_PMCTR, SEL1, 4, 4)
+FIELD(EV5_PMCTR, KILLK, 8, 1)
+FIELD(EV5_PMCTR, KILLP, 9, 1)
+FIELD(EV5_PMCTR, CTL2, 10, 2)
+FIELD(EV5_PMCTR, CTL1, 12, 2)
+FIELD(EV5_PMCTR, CTL0, 14, 2)
+FIELD(EV5_PMCTR, CTR2, 16, 14)
+FIELD(EV5_PMCTR, KILLU, 30, 1)
+FIELD(EV5_PMCTR, SEL0, 31, 1)
+FIELD(EV5_PMCTR, CTR1, 32, 16)
+FIELD(EV5_PMCTR, CTR0, 48, 16)
+
+/* Bit definitions for EV5_DTB_ASN */
+FIELD(EV5_DTB_ASN, ASN, 57, 7)
+
+/* Bit definitions for EV5_DTB_CM */
+FIELD(EV5_DTB_CM, CM, 3, 2)
+
+/* Bit definitions for EV5_DTB_TAG */
+FIELD(EV5_DTB_TAG, VA, 13, 30)
+
+/* Bit definitions for EV5_DTB_PTE */
+FIELD(EV5_DTB_PTE, FOR, 1, 1)
+FIELD(EV5_DTB_PTE, FOW, 2, 1)
+FIELD(EV5_DTB_PTE, ASM, 4, 1)
+FIELD(EV5_DTB_PTE, GH, 5, 2)
+FIELD(EV5_DTB_PTE, KRE, 8, 1)
+FIELD(EV5_DTB_PTE, ERE, 9, 1)
+FIELD(EV5_DTB_PTE, SRE, 10, 1)
+FIELD(EV5_DTB_PTE, URE, 11, 1)
+FIELD(EV5_DTB_PTE, KWE, 12, 1)
+FIELD(EV5_DTB_PTE, EWE, 13, 1)
+FIELD(EV5_DTB_PTE, SWE, 14, 1)
+FIELD(EV5_DTB_PTE, UWE, 15, 1)
+FIELD(EV5_DTB_PTE, PFN, 32, 27)
+
+/* Bit definitions for EV5_MM_STAT */
+FIELD(EV5_MM_STAT, WR, 0, 1)
+FIELD(EV5_MM_STAT, ACV, 1, 1)
+FIELD(EV5_MM_STAT, FOR, 2, 1)
+FIELD(EV5_MM_STAT, FOW, 3, 1)
+FIELD(EV5_MM_STAT, DTB_MISS, 4, 1)
+FIELD(EV5_MM_STAT, BAD_VA, 5, 1)
+FIELD(EV5_MM_STAT, RA, 6, 5)
+FIELD(EV5_MM_STAT, OPCODE, 11, 6)
+
+/* Bit definitions for EV5_VA_FORM */
+FIELD(EV5_VA_FORM, VA, 3, 30)
+FIELD(EV5_VA_FORM, VPTB, 33, 31)
+
+/* Bit definitions for EV5_VA_FORM_NT */
+FIELD(EV5_VA_FORM_NT, VA, 3, 19)
+FIELD(EV5_VA_FORM_NT, VPTB, 30, 34)
+
+/* Bit definitions for EV5_MVPTBR */
+FIELD(EV5_MVPTBR, VPTB, 30, 34)
+
+/* Bit definitions for EV5_DTB_IS */
+FIELD(EV5_DTB_IS, VA, 13, 30)
+
+/* Bit definitions for EV5_ALT_MODE */
+FIELD(EV5_ALT_MODE, AM, 3, 2)
+
+/* Bit definitions for EV5_MCSR */
+FIELD(EV5_MCSR, M_BIG_ENDIAN, 0, 1)
+FIELD(EV5_MCSR, SPE, 1, 2)
+FIELD(EV5_MCSR, SPE_1, 1, 1)
+FIELD(EV5_MCSR, SPE_2, 2, 1)
+FIELD(EV5_MCSR, E_BIG_ENDIAN, 4, 1)
+
+/* Bit definitions for EV5_DC_PERR */
+FIELD(EV5_DC_PERR, SEO, 0, 1)
+FIELD(EV5_DC_PERR, LOCK, 1, 1)
+FIELD(EV5_DC_PERR, DP0, 2, 1)
+FIELD(EV5_DC_PERR, DP1, 3, 1)
+FIELD(EV5_DC_PERR, TP0, 4, 1)
+FIELD(EV5_DC_PERR, TP1, 5, 1)
+
+/* Bit definitions for EV5_DC_TEST_CTL */
+FIELD(EV5_DC_TEST_CTL, BANK0, 0, 1)
+FIELD(EV5_DC_TEST_CTL, BANK1, 1, 1)
+FIELD(EV5_DC_TEST_CTL, INDEX, 3, 10)
+FIELD(EV5_DC_TEST_CTL, DATA, 13, 1)
+FIELD(EV5_DC_TEST_CTL, SHIFT, 14, 1)
+FIELD(EV5_DC_TEST_CTL, LOAD, 15, 1)
+
+/* Bit definitions for EV5_DC_TEST_TAG */
+FIELD(EV5_DC_TEST_TAG, TAG_PAR, 2, 1)
+FIELD(EV5_DC_TEST_TAG, OW0, 11, 1)
+FIELD(EV5_DC_TEST_TAG, OW1, 12, 1)
+
+/* Bit definitions for EV5_DC_TEST_TAG_TEMP */
+FIELD(EV5_DC_TEST_TAG_TEMP, TAG_PAR, 2, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, D0P0, 3, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, D0P1, 4, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, D1P0, 5, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, D1P1, 6, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, OW0, 11, 1)
+FIELD(EV5_DC_TEST_TAG_TEMP, OW1, 12, 1)
+
+/* Bit definitions for EV5_DC_MODE */
+FIELD(EV5_DC_MODE, DC_ENA, 0, 1)
+FIELD(EV5_DC_MODE, DC_FHIT, 1, 1)
+FIELD(EV5_DC_MODE, DC_BAD_PARITY, 2, 1)
+FIELD(EV5_DC_MODE, DC_PERR_DIS, 3, 1)
+FIELD(EV5_DC_MODE, DC_DOA, 4, 1)
+
+/* Bit definitions for EV5_MAF_MODE */
+FIELD(EV5_MAF_MODE, MAF_NOMERGE, 0, 1)
+FIELD(EV5_MAF_MODE, WB_FLUSH_ALWAYS, 1, 1)
+FIELD(EV5_MAF_MODE, WB_NOMERGE, 2, 1)
+FIELD(EV5_MAF_MODE, IO_NOMERGE, 3, 1)
+FIELD(EV5_MAF_MODE, WB_CNT_DISABLE, 4, 1)
+FIELD(EV5_MAF_MODE, MAF_ARB_DISABLE, 5, 1)
+FIELD(EV5_MAF_MODE, DREAD_PENDING, 6, 1)
+FIELD(EV5_MAF_MODE, WB_PENDING, 7, 1)
+FIELD(EV5_MAF_MODE, WB_SET_LO_THRESHOLD, 8, 2)
+FIELD(EV5_MAF_MODE, WB_CLR_LO_THRESHOLD, 10, 2)
+
+/* Bit definitions for EV5_SC_CTL */
+FIELD(EV5_SC_CTL, SC_FHIT, 0, 1)
+FIELD(EV5_SC_CTL, SC_FLUSH, 1, 1)
+FIELD(EV5_SC_CTL, SC_TAG_STAT, 2, 6)
+FIELD(EV5_SC_CTL, SC_FB_DP, 8, 4)
+FIELD(EV5_SC_CTL, SC_BLK_SIZE, 12, 1)
+FIELD(EV5_SC_CTL, SC_SET_EN, 13, 3)
+FIELD(EV5_SC_CTL, SC_SOFT_REPAIR, 16, 3)
+
+/* Bit definitions for EV5_SC_STAT */
+FIELD(SC_STAT, SC_TPERR, 0, 3)
+FIELD(SC_STAT, SC_DPERR, 3, 8)
+FIELD(SC_STAT, SC_CMD, 11, 5)
+FIELD(SC_STAT, SC_SCND_ERR, 16, 1)
+
+/* Bit definitions for EV5_SC_ADDR */
+FIELD(EV5_SC_ADDR, SC_TAG_PARITY, 4, 1)
+FIELD(EV5_SC_ADDR, TAG_STAT_SB0, 5, 3)
+FIELD(EV5_SC_ADDR, TAG_STAT_SB1, 8, 3)
+FIELD(EV5_SC_ADDR, OW_MOD0, 11, 2)
+FIELD(EV5_SC_ADDR, OW_MOD1, 13, 2)
+FIELD(EV5_SC_ADDR, TAG_LO, 15, 17)
+FIELD(EV5_SC_ADDR, TAG_HI, 32, 7)
+
+/* Bit definitions for EV5_BC_CTL */
+FIELD(EV5_BC_CTL, BC_ENABLED, 0, 1)
+FIELD(EV5_BC_CTL, ALLOC_CYC, 1, 1)
+FIELD(EV5_BC_CTL, EI_OPT_CMD, 2, 1)
+FIELD(EV5_BC_CTL, EI_OPT_CMD_MB, 3, 1)
+FIELD(EV5_BC_CTL, VTM_FIRST, 5, 1)
+FIELD(EV5_BC_CTL, EI_ECC_OR_PARITY, 6, 1)
+FIELD(EV5_BC_CTL, BC_FHIT, 7, 1)
+FIELD(EV5_BC_CTL, BC_TAG_STAT, 8, 5)
+FIELD(EV5_BC_CTL, BC_BAD_DAT, 13, 2)
+FIELD(EV5_BC_CTL, EI_DIS_ERR, 15, 1)
+FIELD(EV5_BC_CTL, TL_PIPE_LATCH, 16, 1)
+FIELD(EV5_BC_CTL, BC_WAVE_PIPE, 17, 2)
+FIELD(EV5_BC_CTL, PM_MUX_SEL, 19, 6)
+FIELD(EV5_BC_CTL, DBG_MUX_SEL, 25, 1)
+FIELD(EV5_BC_CTL, DIS_BAF_BYP, 26, 1)
+FIELD(EV5_BC_CTL, DIS_SC_VIC_BUF, 27, 1)
+FIELD(EV5_BC_CTL, DIS_SYS_ADDR_PAR, 28, 1)
+FIELD(EV5_BC_CTL, READ_DIRTY_CLN_SHR, 29, 1)
+FIELD(EV5_BC_CTL, WRITE_READ_BUBBLE, 30, 1)
+FIELD(EV5_BC_CTL, BC_WAVE_PIPE_2, 31, 1)
+FIELD(EV5_BC_CTL, AUTO_DACK, 32, 1)
+FIELD(EV5_BC_CTL, DIS_BYTE_WORD, 33, 1)
+FIELD(EV5_BC_CTL, STCLK_DELAY, 34, 1)
+FIELD(EV5_BC_CTL, WRITE_UNDER_MISS, 35, 1)
+
+/* Bit definitions for EV5_BC_CFG */
+FIELD(EV5_BC_CONFIG, BC_SIZE, 0, 3)
+FIELD(EV5_BC_CONFIG, BC_RD_SPD, 4, 4)
+FIELD(EV5_BC_CONFIG, BC_WR_SPD, 8, 4)
+FIELD(EV5_BC_CONFIG, BC_RD_WR_SPC, 12, 3)
+FIELD(EV5_BC_CONFIG, BC_WE_CTL, 20, 9)
+
+/* Bit definitions for EV5_EI_STAT */
+FIELD(EV5_EI_STAT, SYS_ID, 24, 4)
+FIELD(EV5_EI_STAT, BC_TPERR, 28, 1)
+FIELD(EV5_EI_STAT, BC_TC_PERR, 29, 1)
+FIELD(EV5_EI_STAT, EI_ES, 30, 1)
+FIELD(EV5_EI_STAT, COR_ECC_ERR, 31, 1)
+FIELD(EV5_EI_STAT, UNC_ECC_ERR, 32, 1)
+FIELD(EV5_EI_STAT, EI_PAR_ERR, 33, 1)
+FIELD(EV5_EI_STAT, FIL_IRD, 34, 1)
+FIELD(EV5_EI_STAT, SEO_HRD_ERR, 35, 1)
+
+/*
+ * EV5 specific IPR index definitions.
+ */
+#define EV5_IPR_ISR                 0x100       /* 0000 0001 0000 0000 */
+#define EV5_IPR_ITB_TAG             0x101       /* 0000 0001 0000 0001 */
+#define EV5_IPR_ITB_PTE             0x102       /* 0000 0001 0000 0010 */
+#define EV5_IPR_ITB_ASN             0x103       /* 0000 0001 0000 0011 */
+#define EV5_IPR_ITB_PTE_TEMP        0x104       /* 0000 0001 0000 0100 */
+#define EV5_IPR_ITB_IA              0x105       /* 0000 0001 0000 0101 */
+#define EV5_IPR_ITB_IAP             0x106       /* 0000 0001 0000 0110 */
+#define EV5_IPR_ITB_IS              0x107       /* 0000 0001 0000 0111 */
+#define EV5_IPR_SIRR                0x108       /* 0000 0001 0000 1000 */
+#define EV5_IPR_ASTRR               0x109       /* 0000 0001 0000 1001 */
+#define EV5_IPR_ASTER               0x10A       /* 0000 0001 0000 1010 */
+#define EV5_IPR_EXC_ADDR            0x10B       /* 0000 0001 0000 1011 */
+#define EV5_IPR_EXC_SUM             0x10C       /* 0000 0001 0000 1100 */
+#define EV5_IPR_EXC_MASK            0x10D       /* 0000 0001 0000 1101 */
+#define EV5_IPR_PAL_BASE            0x10E       /* 0000 0001 0000 1110 */
+#define EV5_IPR_ICM                 0x10F       /* 0000 0001 0000 1111 */
+#define EV5_IPR_IPL                 0x110       /* 0000 0001 0001 0000 */
+#define EV5_IPR_INTID               0x111       /* 0000 0001 0001 0001 */
+#define EV5_IPR_IFAULT_VA_FORM      0x112       /* 0000 0001 0001 0010 */
+#define EV5_IPR_IVPTBR              0x113       /* 0000 0001 0001 0011 */
+#define EV5_IPR_HW_INT_CLR          0x115       /* 0000 0001 0001 0101 */
+#define EV5_IPR_SL_XMIT             0x116       /* 0000 0001 0001 0110 */
+#define EV5_IPR_SL_RCV              0x117       /* 0000 0001 0001 0111 */
+#define EV5_IPR_ICSR                0x118       /* 0000 0001 0001 1000 */
+#define EV5_IPR_IC_FLUSH            0x119       /* 0000 0001 0001 1001 */
+#define EV5_IPR_IC_PERR             0x11A       /* 0000 0001 0001 1010 */
+#define EV5_IPR_IC_ROW_MAP          0x11B       /* 0000 0001 0001 1011 */
+#define EV5_IPR_PMCTR               0x11C       /* 0000 0001 0001 1100 */
+
+#define EV5_IPR_PALTEMP_0           0x140       /* 0000 0001 0100 0000 */
+#define EV5_IPR_PALTEMP_1           0x141       /* 0000 0001 0100 0001 */
+#define EV5_IPR_PALTEMP_2           0x142       /* 0000 0001 0100 0010 */
+#define EV5_IPR_PALTEMP_3           0x143       /* 0000 0001 0100 0011 */
+#define EV5_IPR_PALTEMP_4           0x144       /* 0000 0001 0100 0100 */
+#define EV5_IPR_PALTEMP_5           0x145       /* 0000 0001 0100 0101 */
+#define EV5_IPR_PALTEMP_6           0x146       /* 0000 0001 0100 0110 */
+#define EV5_IPR_PALTEMP_7           0x147       /* 0000 0001 0100 0111 */
+#define EV5_IPR_PALTEMP_8           0x148       /* 0000 0001 0100 1000 */
+#define EV5_IPR_PALTEMP_9           0x149       /* 0000 0001 0100 1001 */
+#define EV5_IPR_PALTEMP_10          0x14A       /* 0000 0001 0100 1010 */
+#define EV5_IPR_PALTEMP_11          0x14B       /* 0000 0001 0100 1011 */
+#define EV5_IPR_PALTEMP_12          0x14C       /* 0000 0001 0100 1100 */
+#define EV5_IPR_PALTEMP_13          0x14D       /* 0000 0001 0100 1101 */
+#define EV5_IPR_PALTEMP_14          0x14E       /* 0000 0001 0100 1110 */
+#define EV5_IPR_PALTEMP_15          0x14F       /* 0000 0001 0100 1111 */
+#define EV5_IPR_PALTEMP_16          0x150       /* 0000 0001 0101 0000 */
+#define EV5_IPR_PALTEMP_17          0x151       /* 0000 0001 0101 0001 */
+#define EV5_IPR_PALTEMP_18          0x152       /* 0000 0001 0101 0010 */
+#define EV5_IPR_PALTEMP_19          0x153       /* 0000 0001 0101 0011 */
+#define EV5_IPR_PALTEMP_20          0x154       /* 0000 0001 0101 0100 */
+#define EV5_IPR_PALTEMP_21          0x155       /* 0000 0001 0101 0101 */
+#define EV5_IPR_PALTEMP_22          0x156       /* 0000 0001 0101 0110 */
+#define EV5_IPR_PALTEMP_23          0x157       /* 0000 0001 0101 0111 */
+
+#define EV5_IPR_DTB_ASN             0x200       /* 0000 0010 0000 0000 */
+#define EV5_IPR_DTB_CM              0x201       /* 0000 0010 0000 0001 */
+#define EV5_IPR_DTB_TAG             0x202       /* 0000 0010 0000 0010 */
+#define EV5_IPR_DTB_PTE             0x203       /* 0000 0010 0000 0011 */
+#define EV5_IPR_DTB_PTE_TEMP        0x204       /* 0000 0010 0000 0100 */
+#define EV5_IPR_MM_STAT             0x205       /* 0000 0010 0000 0101 */
+#define EV5_IPR_VA                  0x206       /* 0000 0010 0000 0110 */
+#define EV5_IPR_VA_FORM             0x207       /* 0000 0010 0000 0111 */
+#define EV5_IPR_MVPTBR              0x208       /* 0000 0010 0000 1000 */
+#define EV5_IPR_DTB_IAP             0x209       /* 0000 0010 0000 1001 */
+#define EV5_IPR_DTB_IA              0x20A       /* 0000 0010 0000 1010 */
+#define EV5_IPR_DTB_IS              0x20B       /* 0000 0010 0000 1011 */
+#define EV5_IPR_ALT_MODE            0x20C       /* 0000 0010 0000 1100 */
+#define EV5_IPR_CC                  0x20D       /* 0000 0010 0000 1101 */
+#define EV5_IPR_CC_CTL              0x20E       /* 0000 0010 0000 1110 */
+#define EV5_IPR_MCSR                0x20F       /* 0000 0010 0000 1111 */
+#define EV5_IPR_DC_FLUSH            0x210       /* 0000 0010 0001 0000 */
+#define EV5_IPR_DC_PERR             0x212       /* 0000 0010 0001 0010 */
+#define EV5_IPR_DC_TEST_CTL         0x213       /* 0000 0010 0001 0011 */
+#define EV5_IPR_DC_TEST_TAG         0x214       /* 0000 0010 0001 0100 */
+#define EV5_IPR_DC_TEST_TAG_TEMP    0x215       /* 0000 0010 0001 0101 */
+#define EV5_IPR_DC_MODE             0x216       /* 0000 0010 0001 0110 */
+#define EV5_IPR_MAF_MODE            0x217       /* 0000 0010 0001 0111 */
+
+/*
+ * EV5 specific external interface CSR addresses.
+ */
+#define EV5_CSR_BASE                0xFFFFF00000
+
+#define EV5_CSR_SC_CTL              0x0A8       /* 0000 0000 1010 1000 */
+#define EV5_CSR_SC_STAT             0x0E8       /* 0000 0000 1110 1000 */
+#define EV5_CSR_SC_ADDR             0x188       /* 0000 0001 1000 1000 */
+#define EV5_CSR_BC_CTL              0x128       /* 0000 0001 0010 1000 */
+#define EV5_CSR_BC_CFG              0x1C8       /* 0000 0001 1100 1000 */
+#define EV5_CSR_BC_TAGADDR          0x108       /* 0000 0001 0000 1000 */
+#define EV5_CSR_EI_STAT             0x168       /* 0000 0001 0110 1000 */
+#define EV5_CSR_EI_ADDR             0x148       /* 0000 0001 0100 1000 */
+#define EV5_CSR_FILL_SYNDROME       0x068       /* 0000 0000 0110 1000 */
+#define EV5_CSR_LD_LOCK             0x1E8       /* 0000 0001 1110 1000 */
+
+/*
+ * EV6 specific IPR field definitions.
+ */
+
+/* Bit definitions for EV6_VA_FORM */
+FIELD(EV6_VA_FORM, VA, 3, 30)
+FIELD(EV6_VA_FORM, VPTB, 33, 31)
+
+/* Bit definitions for EV6_VA_FORM_48 */
+FIELD(EV6_VA_FORM_48, VA, 3, 35)
+FIELD(EV6_VA_FORM_48, VA_SEXT0, 38, 1)
+FIELD(EV6_VA_FORM_48, VA_SEXT1, 39, 1)
+FIELD(EV6_VA_FORM_48, VA_SEXT2, 40, 1)
+FIELD(EV6_VA_FORM_48, VA_SEXT3, 41, 1)
+FIELD(EV6_VA_FORM_48, VA_SEXT4, 42, 1)
+FIELD(EV6_VA_FORM_48, VPTB, 43, 21)
+
+/* Bit definitions for EV6_VA_FORM_32 */
+FIELD(EV6_VA_FORM_32, VA, 3, 19)
+FIELD(EV6_VA_FORM_32, VPTB, 30, 34)
+
+/* Bit definitions for EV6_VA_CTL */
+FIELD(EV6_VA_CTL, B_ENDIAN, 0, 1)
+FIELD(EV6_VA_CTL, VA_48, 1, 1)
+FIELD(EV6_VA_CTL, VA_FORM_32, 2, 1)
+FIELD(EV6_VA_CTL, VPTB, 30, 34)
+
+/* Bit definitions for EV6_ITB_TAG */
+FIELD(EV6_ITB_TAG, VA, 13, 35)
+
+/* Bit definitions for EV6_ITB_PTE */
+FIELD(EV6_ITB_PTE, ASM, 4, 1)
+FIELD(EV6_ITB_PTE, GH, 5, 2)
+FIELD(EV6_ITB_PTE, KRE, 8, 1)
+FIELD(EV6_ITB_PTE, ERE, 9, 1)
+FIELD(EV6_ITB_PTE, SRE, 10, 1)
+FIELD(EV6_ITB_PTE, URE, 11, 1)
+FIELD(EV6_ITB_PTE, PFN, 13, 31)
+
+/* Bit definitions for EV6_ITB_IS */
+FIELD(EV6_ITB_IS, VA, 13, 35)
+
+/* Bit definitions for EV6_EXC_ADDR */
+FIELD(EV6_EXC_ADDR, PAL, 0, 1)
+FIELD(EV6_EXC_ADDR, RSV, 1, 1)
+FIELD(EV6_EXC_ADDR, PC, 2, 46)
+FIELD(EV6_EXC_ADDR, PC_SEXT0, 48, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT1, 49, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT2, 50, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT3, 51, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT4, 52, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT5, 53, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT6, 54, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT7, 55, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT8, 56, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT9, 57, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT10, 58, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT11, 59, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT12, 60, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT13, 61, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT14, 62, 1)
+FIELD(EV6_EXC_ADDR, PC_SEXT15, 63, 1)
+
+/* Bit definitions for EV6_IVA_FORM */
+FIELD(EV6_IVA_FORM, VA, 3, 30)
+FIELD(EV6_IVA_FORM, VPTB, 33, 31)
+
+/* Bit definitions for EV6_IVA_FORM_48 */
+FIELD(EV6_IVA_FORM_48, VA, 3, 35)
+FIELD(EV6_IVA_FORM_48, VA_SEXT0, 38, 1)
+FIELD(EV6_IVA_FORM_48, VA_SEXT1, 39, 1)
+FIELD(EV6_IVA_FORM_48, VA_SEXT2, 40, 1)
+FIELD(EV6_IVA_FORM_48, VA_SEXT3, 41, 1)
+FIELD(EV6_IVA_FORM_48, VA_SEXT4, 42, 1)
+FIELD(EV6_IVA_FORM_48, VPTB, 43, 21)
+
+/* Bit definitions for EV6_IVA_FORM_32 */
+FIELD(EV6_IVA_FORM_32, VA, 3, 19)
+FIELD(EV6_IVA_FORM_32, VPTB, 30, 34)
+
+/* Bit definitions for EV6_IER_CM */
+FIELD(EV6_IER_CM, CM, 3, 2)
+FIELD(EV6_IER_CM, ASTEN, 13, 1)
+FIELD(EV6_IER_CM, SIEN, 14, 15)
+FIELD(EV6_IER_CM, PCEN, 29, 2)
+FIELD(EV6_IER_CM, CREN, 31, 1)
+FIELD(EV6_IER_CM, SLEN, 32, 1)
+FIELD(EV6_IER_CM, EIEN, 33, 6)
+
+/* Bit definitions for EV6_SIRR */
+FIELD(EV6_SIRR, SIR, 14, 15)
+
+/* Bit definitions for EV6_ISUM */
+FIELD(EV6_ISUM, ASTK, 3, 1)
+FIELD(EV6_ISUM, ASTE, 4, 1)
+FIELD(EV6_ISUM, ASTS, 9, 1)
+FIELD(EV6_ISUM, ASTU, 10, 1)
+FIELD(EV6_ISUM, SI, 14, 15)
+FIELD(EV6_ISUM, PC, 29, 2)
+FIELD(EV6_ISUM, CR, 31, 1)
+FIELD(EV6_ISUM, SL, 32, 1)
+FIELD(EV6_ISUM, EI, 33, 6)
+
+/* Bit definitions for EV6_HW_INT_CLR */
+FIELD(EV6_HW_INT_CLR, FBTP, 26, 1)
+FIELD(EV6_HW_INT_CLR, FBDP, 27, 1)
+FIELD(EV6_HW_INT_CLR, MCHK_D, 28, 1)
+FIELD(EV6_HW_INT_CLR, PC, 29, 2)
+FIELD(EV6_HW_INT_CLR, CR, 31, 1)
+FIELD(EV6_HW_INT_CLR, SL, 32, 1)
+
+/* Bit definitions for EV6_EXC_SUM */
+FIELD(EV6_EXC_SUM, SWC, 0, 1)
+FIELD(EV6_EXC_SUM, INV, 1, 1)
+FIELD(EV6_EXC_SUM, DZE, 2, 1)
+FIELD(EV6_EXC_SUM, FOV, 3, 1)
+FIELD(EV6_EXC_SUM, UNF, 4, 1)
+FIELD(EV6_EXC_SUM, INE, 5, 1)
+FIELD(EV6_EXC_SUM, IOV, 6, 1)
+FIELD(EV6_EXC_SUM, INT, 7, 1)
+FIELD(EV6_EXC_SUM, REG, 8, 5)
+FIELD(EV6_EXC_SUM, BAD_IVA, 13, 1)
+FIELD(EV6_EXC_SUM, PC_OVFL, 41, 1)
+FIELD(EV6_EXC_SUM, SET_INV, 42, 1)
+FIELD(EV6_EXC_SUM, SET_DZE, 43, 1)
+FIELD(EV6_EXC_SUM, SET_FOV, 44, 1)
+FIELD(EV6_EXC_SUM, SET_UNF, 45, 1)
+FIELD(EV6_EXC_SUM, SET_INE, 46, 1)
+FIELD(EV6_EXC_SUM, SET_IOV, 47, 1)
+FIELD(EV6_EXC_SUM, SEXT0, 48, 1)
+FIELD(EV6_EXC_SUM, SEXT1, 49, 1)
+FIELD(EV6_EXC_SUM, SEXT2, 50, 1)
+FIELD(EV6_EXC_SUM, SEXT3, 51, 1)
+FIELD(EV6_EXC_SUM, SEXT4, 52, 1)
+FIELD(EV6_EXC_SUM, SEXT5, 53, 1)
+FIELD(EV6_EXC_SUM, SEXT6, 54, 1)
+FIELD(EV6_EXC_SUM, SEXT7, 55, 1)
+FIELD(EV6_EXC_SUM, SEXT8, 56, 1)
+FIELD(EV6_EXC_SUM, SEXT9, 57, 1)
+FIELD(EV6_EXC_SUM, SEXT10, 58, 1)
+FIELD(EV6_EXC_SUM, SEXT11, 59, 1)
+FIELD(EV6_EXC_SUM, SEXT12, 60, 1)
+FIELD(EV6_EXC_SUM, SEXT13, 61, 1)
+FIELD(EV6_EXC_SUM, SEXT14, 62, 1)
+FIELD(EV6_EXC_SUM, SEXT15, 63, 1)
+
+/* Bit definitions for EV6_PAL_BASE */
+FIELD(EV6_PAL_BASE, PAL_BASE, 15, 29)
+
+/* Bit definitions for EV6_I_CTL */
+FIELD(EV6_I_CTL, SPCE, 0, 1)
+FIELD(EV6_I_CTL, IC_EN, 1, 2)
+FIELD(EV6_I_CTL, SPE, 3, 3)
+FIELD(EV6_I_CTL, SDE, 7, 1)
+FIELD(EV6_I_CTL, SBE, 8, 2)
+FIELD(EV6_I_CTL, BP_MODE, 10, 2)
+FIELD(EV6_I_CTL, HWE, 12, 1)
+FIELD(EV6_I_CTL, SL_XMIT, 13, 1)
+FIELD(EV6_I_CTL, SL_RCV, 14, 1)
+FIELD(EV6_I_CTL, VA_48, 15, 1)
+FIELD(EV6_I_CTL, VA_FORM_32, 16, 1)
+FIELD(EV6_I_CTL, SINGLE_ISSUE, 17, 1)
+FIELD(EV6_I_CTL, PCT0_EN, 18, 1)
+FIELD(EV6_I_CTL, PCT1_EN, 19, 1)
+FIELD(EV6_I_CTL, CALL_PAL_R23, 20, 1)
+FIELD(EV6_I_CTL, MCHK_EN, 21, 1)
+FIELD(EV6_I_CTL, TB_MB_EN, 22, 1)
+FIELD(EV6_I_CTL, BIST_FAIL, 23, 1)
+FIELD(EV6_I_CTL, CHIP_ID, 24, 6)
+FIELD(EV6_I_CTL, VPTB, 30, 18)
+FIELD(EV6_I_CTL, VPTB_SEXT0, 48, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT1, 49, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT2, 50, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT3, 51, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT4, 52, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT5, 53, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT6, 54, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT7, 55, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT8, 56, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT9, 57, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT10, 58, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT11, 59, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT12, 60, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT13, 61, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT14, 62, 1)
+FIELD(EV6_I_CTL, VPTB_SEXT15, 63, 1)
+
+/* Bit definitions for EV6_PCTR_CTL */
+FIELD(EV6_PCTR_CTL, SL1, 0, 4)
+FIELD(EV6_PCTR_CTL, SL0, 4, 1)
+FIELD(EV6_PCTR_CTL, PCTR1, 6, 20)
+FIELD(EV6_PCTR_CTL, PCTR0, 28, 20)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT0, 48, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT1, 49, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT2, 50, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT3, 51, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT4, 52, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT5, 53, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT6, 54, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT7, 55, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT8, 56, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT9, 57, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT10, 58, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT11, 59, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT12, 60, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT13, 61, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT14, 62, 1)
+FIELD(EV6_PCTR_CTL, PCTR0_CTL_SEXT15, 63, 1)
+
+/* Bit definitions for EV6_I_STAT */
+FIELD(EV6_I_STAT, TPE, 29, 1)
+FIELD(EV6_I_STAT, DPE, 30, 1)
+
+/* Bit definitions for EV6_PCTX */
+FIELD(EV6_PCTX, PPCE, 1, 1)
+FIELD(EV6_PCTX, FPE, 2, 1)
+FIELD(EV6_PCTX, ASTER, 5, 4)
+FIELD(EV6_PCTX, ASTRR, 9, 4)
+FIELD(EV6_PCTX, ASN, 39, 8)
+
+/* Bit definitions for EV6_DTB_TAG */
+FIELD(EV6_DTB_TAG, VA, 13, 35)
+
+/* Bit definitions for EV6_DTB_PTE */
+FIELD(EV6_DTB_PTE, FOR, 1, 1)
+FIELD(EV6_DTB_PTE, FOW, 2, 1)
+FIELD(EV6_DTB_PTE, ASM, 4, 1)
+FIELD(EV6_DTB_PTE, GH, 5, 2)
+FIELD(EV6_DTB_PTE, KRE, 8, 1)
+FIELD(EV6_DTB_PTE, ERE, 9, 1)
+FIELD(EV6_DTB_PTE, SRE, 10, 1)
+FIELD(EV6_DTB_PTE, URE, 11, 1)
+FIELD(EV6_DTB_PTE, KWE, 12, 1)
+FIELD(EV6_DTB_PTE, EWE, 13, 1)
+FIELD(EV6_DTB_PTE, SWE, 14, 1)
+FIELD(EV6_DTB_PTE, UWE, 15, 1)
+FIELD(EV6_DTB_PTE, PFN, 32, 31)
+
+/* Bit definitions for EV6_DTB_IS */
+FIELD(EV6_DTB_IS, VA, 13, 35)
+
+/* Bit definitions for EV6_DTB_ASN */
+FIELD(EV6_DTB_ASN, ASN, 56, 8)
+
+/* Bit definitions for EV6_DTB_ALT_MODE */
+FIELD(EV6_DTB_ALT_MODE, MODE, 0, 2)
+
+/* Bit definitions for EV6_MM_STAT */
+FIELD(EV6_MM_STAT, WR, 0, 1)
+FIELD(EV6_MM_STAT, ACV, 1, 1)
+FIELD(EV6_MM_STAT, FOR, 2, 1)
+FIELD(EV6_MM_STAT, FOW, 3, 1)
+FIELD(EV6_MM_STAT, OPCODE, 4, 6)
+FIELD(EV6_MM_STAT, DC_TAG_PERR, 10, 1)
+
+/* Bit definitions for EV6_M_CTL */
+FIELD(EV6_M_CTL, SPE, 1, 3)
+FIELD(EV6_M_CTL, SMC, 5, 2)
+
+/* Bit definitions for EV6_DC_CTL */
+FIELD(EV6_DC_CTL, SET_EN, 0, 2)
+FIELD(EV6_DC_CTL, F_HIT, 2, 1)
+FIELD(EV6_DC_CTL, FLUSH, 3, 1)
+FIELD(EV6_DC_CTL, F_BAD_TPAR, 4, 1)
+FIELD(EV6_DC_CTL, F_BAD_DECC, 5, 1)
+FIELD(EV6_DC_CTL, DCTAG_PAR_EN, 6, 1)
+FIELD(EV6_DC_CTL, DCDAT_ERR_EN, 7, 1)
+
+/* Bit definitions for EV6_DC_STAT */
+FIELD(EV6_DC_STAT, TPERR_P0, 0, 1)
+FIELD(EV6_DC_STAT, TPERR_P1, 1, 1)
+FIELD(EV6_DC_STAT, DECC_ERR, 2, 1)
+FIELD(EV6_DC_STAT, DECC_COR, 3, 1)
+FIELD(EV6_DC_STAT, SEO, 4, 1)
+
+/* Bit definitions for EV6_DATA */
+FIELD(EV6_DATA, C_DATA, 0, 6)
+
+/* Bit definitions for EV6_SHIFT_CONTROL */
+FIELD(EV6_SHIFT_CONTROL, C_SHIFT, 0, 1)
+
+/* Bit definitions for EV6_FEN */
+FIELD(EV6_FEN, FEN, 0, 1)
+
+/* Bit definitions for EV6_HW_INT_REG */
+FIELD(EV6_HW_INT_REG, FBTP, 26, 1)
+FIELD(EV6_HW_INT_REG, FBDP, 27, 1)
+FIELD(EV6_HW_INT_REG, MCHK_D, 28, 1)
+FIELD(EV6_HW_INT_REG, PC, 29, 2)
+FIELD(EV6_HW_INT_REG, CR, 31, 1)
+FIELD(EV6_HW_INT_REG, SL, 32, 1)
+
+/*
+ * EV6 specific IPR index definitions.
+ */
+#define EV6_IPR_ITB_TAG             0x00        /* 0000 0000 */
+#define EV6_IPR_ITB_PTE             0x01        /* 0000 0001 */
+#define EV6_IPR_ITB_IAP             0x02        /* 0000 0010 */
+#define EV6_IPR_ITB_IA              0x03        /* 0000 0011 */
+#define EV6_IPR_ITB_IS              0x04        /* 0000 0100 */
+#define EV6_IPR_PMPC                0x05        /* 0000 0101 */
+
+#define EV6_IPR_EXC_ADDR            0x06        /* 0000 0110 */
+#define EV6_IPR_IVA_FORM            0x07        /* 0000 0111 */
+
+#define EV6_IPR_CM                  0x09        /* 0000 1001 */
+#define EV6_IPR_IER                 0x0A        /* 0000 1010 */
+#define EV6_IPR_IER_CM              0x0B        /* 0000 1011 */
+#define EV6_IPR_SIRR                0x0C        /* 0000 1100 */
+#define EV6_IPR_ISUM                0x0D        /* 0000 1101 */
+#define EV6_IPR_HW_INT_CLR          0x0E        /* 0000 1110 */
+#define EV6_IPR_EXC_SUM             0x0F        /* 0000 1111 */
+#define EV6_IPR_PAL_BASE            0x10        /* 0001 0000 */
+#define EV6_IPR_I_CTL               0x11        /* 0001 0001 */
+#define EV6_IPR_IC_FLUSH_ASM        0x12        /* 0001 0010 */
+#define EV6_IPR_IC_FLUSH            0x13        /* 0001 0011 */
+#define EV6_IPR_PCTR_CTL            0x14        /* 0001 0100 */
+#define EV6_IPR_CLR_MAP             0x15        /* 0001 0101 */
+#define EV6_IPR_I_STAT              0x16        /* 0001 0110 */
+#define EV6_IPR_SLEEP               0x17        /* 0001 0111 */
+
+#define EV6_IPR_DTB_TAG0            0x20        /* 0010 0000 */
+#define EV6_IPR_DTB_PTE0            0x21        /* 0010 0001 */
+#define EV6_IPR_DTB_IS0             0x24        /* 0010 0100 */
+#define EV6_IPR_DTB_ASN0            0x25        /* 0010 0101 */
+#define EV6_IPR_DTB_ALTMODE         0x26        /* 0010 0110 */
+#define EV6_IPR_MM_STAT             0x27        /* 0010 0111 */
+#define EV6_IPR_M_CTL               0x28        /* 0010 1000 */
+#define EV6_IPR_DC_CTL              0x29        /* 0010 1001 */
+#define EV6_IPR_DC_STAT             0x2A        /* 0010 1010 */
+#define EV6_IPR_C_DATA              0x2B        /* 0010 1011 */
+#define EV6_IPR_C_SHFT              0x2C        /* 0010 1100 */
+#define EV6_IPR_M_FIX               0x2D        /* 0010 1101 */
+
+#define EV6_IPR_PCTX0               0x40        /* 0100 0000 */
+#define EV6_IPR_PCTX1               0x60        /* 0110 0000 */
+
+#define EV6_IPR_DTB_TAG1            0xA0        /* 1010 0000 */
+#define EV6_IPR_DTB_PTE1            0xA1        /* 1010 0001 */
+#define EV6_IPR_DTB_IAP             0xA2        /* 1010 0010 */
+#define EV6_IPR_DTB_IA              0xA3        /* 1010 0011 */
+#define EV6_IPR_DTB_IS1             0xA4        /* 1010 0100 */
+#define EV6_IPR_DTB_ASN1            0xA5        /* 1010 0101 */
+
+#define EV6_IPR_CC                  0xC0        /* 1100 0000 */
+#define EV6_IPR_CC_CTL              0xC1        /* 1100 0001 */
+#define EV6_IPR_VA                  0xC2        /* 1100 0010 */
+#define EV6_IPR_VA_FORM             0xC3        /* 1100 0011 */
+#define EV6_IPR_VA_CTL              0xC4        /* 1100 0100 */
+
+/*
+ * EV6 PCTX sub-field definitions.
+ */
+#define EV6_IPR_PCTX_ASN            0x01
+#define EV6_IPR_PCTX_ASTER          0x02
+#define EV6_IPR_PCTX_ASTRR          0x04
+#define EV6_IPR_PCTX_PPCE           0x08
+#define EV6_IPR_PCTX_FPE            0x10
+
+#endif /* _ALPHA_CPU_IPR_H */

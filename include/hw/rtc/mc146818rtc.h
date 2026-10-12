@@ -32,10 +32,16 @@ struct MC146818RtcState {
     uint64_t last_update;
     int64_t offset;
     qemu_irq irq;
+    qemu_irq sqw_irq;
     int it_shift;
     /* periodic timer */
     QEMUTimer *periodic_timer;
     int64_t next_periodic_time;
+    /* square wave output */
+    QEMUTimer *square_wave_timer;
+    int64_t next_square_wave_time;
+    bool square_wave_edge;
+    bool pf_without_pie;
     /* update-ended timer */
     QEMUTimer *update_timer;
     uint64_t next_alarm_time;

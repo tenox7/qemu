@@ -1,13 +1,42 @@
-config DP264
+config CLIPPER
     bool
     default y
     depends on ALPHA
     imply PCI_DEVICES
     imply TEST_DEVICES
-    imply E1000_PCI
-    select I82378
-    select IDE_CMD646
-    select MC146818RTC
+    select M1543
+    select TSUNAMI
+    select AM29F016
+    select DEC_PCI
+
+config TSUNAMI
+    bool
+    default y
+    depends on ALPHA
     select PCI
+    select TIGBUS
+    select BITBANG_I2C
+
+config AM29F016
+    bool
+    select PFLASH_CFI02
+    select TIGBUS
+
+config TIGBUS
+    bool
+
+config JENSEN
+    bool
+    default y
+    depends on ALPHA
+    select ISA_BUS
+    select I8259
+    select I8254
+    select MC146818RTC
+    select SERIAL_MM
     select PCKBD
-    select SMC37C669
+    select VGA_ISA
+    select PFLASH_CFI01
+    select I8257
+    select FDC_ISA
+    select SCSI

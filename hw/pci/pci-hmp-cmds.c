@@ -29,7 +29,12 @@ static void hmp_info_pci_device(MonitorHMP *hmp, const PciDeviceInfo *dev)
     Monitor *mon = MONITOR(hmp);
     PciMemoryRegionList *region;
 
-    monitor_hmp_printf(hmp, "  Bus %2" PRId64 ", ", dev->bus);
+    if (dev->hose != -1) {
+        monitor_hmp_printf(hmp, "  Hose %2" PRId64 ", ", dev->hose);
+        monitor_hmp_printf(hmp, "bus %2" PRId64 ", ", dev->bus);
+    } else {
+        monitor_hmp_printf(hmp, "  Bus %2" PRId64 ", ", dev->bus);
+    }
     monitor_hmp_printf(hmp, "device %3" PRId64 ", function %" PRId64 ":\n",
                        dev->slot, dev->function);
     monitor_hmp_printf(hmp, "    ");

@@ -112,6 +112,7 @@ static PciDeviceInfo *qmp_query_pci_device(PCIDevice *dev, PCIBus *bus,
     int class;
 
     info = g_new0(PciDeviceInfo, 1);
+    info->hose = pci_root_bus_hose(dev);
     info->bus = bus_num;
     info->slot = PCI_SLOT(dev->devfn);
     info->function = PCI_FUNC(dev->devfn);

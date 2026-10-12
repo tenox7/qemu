@@ -1061,6 +1061,24 @@ static const VMStateDescription vmstate_fdc_phase = {
     }
 };
 
+/* Strict PIO keeps SPECIFY.ND separate from DOR. */
+static bool fdc_strict_pio_needed(void *opaque)
+{
+    return ((FDCtrl *)opaque)->strict_pio;
+}
+
+static const VMStateDescription vmstate_fdc_strict_pio = {
+    /* Retain the subsection ID used by the original Jensen implementation. */
+    .name = "fdc/jensen",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = fdc_strict_pio_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_BOOL(specify_nd, FDCtrl),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 const VMStateDescription vmstate_fdc = {
     .name = "fdc",
     .version_id = 2,
@@ -1103,6 +1121,7 @@ const VMStateDescription vmstate_fdc = {
         &vmstate_fdc_reset_sensei,
         &vmstate_fdc_result_timer,
         &vmstate_fdc_phase,
+        &vmstate_fdc_strict_pio,
         NULL
     }
 };
@@ -1595,7 +1614,8 @@ static void fdctrl_start_transfer(FDCtrl *fdctrl, int direction)
         fdctrl->data_len *= tmp;
     }
     fdctrl->eot = fdctrl->fifo[6];
-    if (fdctrl->dor & FD_DOR_DMAEN) {
+    if ((fdctrl->dor & FD_DOR_DMAEN) &&
+        !(fdctrl->strict_pio && fdctrl->specify_nd)) {
         /* DMA transfer is enabled. */
         IsaDmaClass *k = ISADMA_GET_CLASS(fdctrl->dma);
 
@@ -1617,6 +1637,11 @@ static void fdctrl_start_transfer(FDCtrl *fdctrl, int direction)
             fdctrl_transfer_handler(fdctrl, fdctrl->dma_chann, 0,
                     fdctrl->data_len);
         }
+        return;
+    }
+    if (fdctrl->strict_pio && direction == FD_DIR_WRITE && cur_drv->ro) {
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK,
+                             FD_SR1_NW, 0x00);
         return;
     }
     FLOPPY_DPRINTF("start non-DMA transfer\n");
@@ -1760,6 +1785,28 @@ int fdctrl_transfer_handler(void *opaque, int nchan, int dma_pos, int dma_len)
     return len;
 }
 
+static void fdctrl_pio_ack(FDCtrl *fdctrl)
+{
+    if (fdctrl->strict_pio) {
+        uint8_t status0 = fdctrl->status0;
+
+        fdctrl_reset_irq(fdctrl);
+        fdctrl->status0 = status0;
+    }
+}
+
+static void fdctrl_pio_complete(FDCtrl *fdctrl)
+{
+    /*
+     * 82077AA 4.2.5: EOT without DMA terminal count is an implied TC,
+     * reported as abnormal termination with ST1.EN. This is an expected
+     * end condition for polled reads, including those issued by ARC.
+     * Keep CHRN on the final sector, as in 86Box's non-DMA EOT path.
+     */
+    fdctrl->status0 &= ~FD_SR0_SEEK;
+    fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_EC, 0);
+}
+
 /* Data register : 0x05 */
 static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
 {
@@ -1783,6 +1830,7 @@ static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
     switch (fdctrl->phase) {
     case FD_PHASE_EXECUTION:
         assert(fdctrl->msr & FD_MSR_NONDMA);
+        fdctrl_pio_ack(fdctrl);
         if (pos == 0) {
             if (fdctrl->data_pos != 0)
                 if (!fdctrl_seek_to_next_sect(fdctrl, cur_drv)) {
@@ -1799,7 +1847,13 @@ static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
         }
 
         if (++fdctrl->data_pos == fdctrl->data_len) {
+            /* Result bytes share the FIFO with short DTL payloads. */
+            retval = fdctrl->fifo[pos];
             fdctrl->msr &= ~FD_MSR_RQM;
+            if (fdctrl->strict_pio) {
+                fdctrl_pio_complete(fdctrl);
+                return retval;
+            }
             fdctrl_stop_transfer(fdctrl, 0x00, 0x00, 0x00);
         }
         break;
@@ -2067,10 +2121,14 @@ static void fdctrl_handle_specify(FDCtrl *fdctrl, int direction)
 {
     fdctrl->timer0 = (fdctrl->fifo[1] >> 4) & 0xF;
     fdctrl->timer1 = fdctrl->fifo[2] >> 1;
-    if (fdctrl->fifo[2] & 1)
+    if (fdctrl->strict_pio) {
+        /* DOR bit 3 gates DMA/IRQ pins; it does not select transfer mode. */
+        fdctrl->specify_nd = fdctrl->fifo[2] & 1;
+    } else if (fdctrl->fifo[2] & 1) {
         fdctrl->dor &= ~FD_DOR_DMAEN;
-    else
+    } else {
         fdctrl->dor |= FD_DOR_DMAEN;
+    }
     /* No result back */
     fdctrl_to_command_phase(fdctrl);
 }
@@ -2330,6 +2388,7 @@ static void fdctrl_write_data(FDCtrl *fdctrl, uint32_t value)
         /* For DMA requests, RQM should be cleared during execution phase, so
          * we would have errored out above. */
         assert(fdctrl->msr & FD_MSR_NONDMA);
+        fdctrl_pio_ack(fdctrl);
 
         /* FIFO data write */
         if (pos == FD_SECTOR_LEN - 1 ||
@@ -2338,9 +2397,21 @@ static void fdctrl_write_data(FDCtrl *fdctrl, uint32_t value)
             if (fd_write_sector(cur_drv, fdctrl->fifo) < 0) {
                 FLOPPY_DPRINTF("error writing sector %d\n",
                                fd_sector(cur_drv));
+                if (fdctrl->strict_pio) {
+                    fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, 0, 0);
+                }
+                break;
+            }
+            if (fdctrl->strict_pio &&
+                fdctrl->data_pos == fdctrl->data_len) {
+                fdctrl_pio_complete(fdctrl);
                 break;
             }
             if (!fdctrl_seek_to_next_sect(fdctrl, cur_drv)) {
+                if (fdctrl->strict_pio) {
+                    fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM,
+                                         FD_SR1_EC, 0);
+                }
                 FLOPPY_DPRINTF("error seeking to next sector %d\n",
                                fd_sector(cur_drv));
                 break;
@@ -2412,6 +2483,11 @@ static void fdctrl_result_timer(void *opaque)
      */
     if (cur_drv->last_sect != 0) {
         cur_drv->sect = (cur_drv->sect % cur_drv->last_sect) + 1;
+    }
+    if (fdctrl->strict_pio &&
+        (!cur_drv->blk || !blk_is_inserted(cur_drv->blk))) {
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA, 0);
+        return;
     }
     /* READ_ID can't automatically succeed! */
     if ((fdctrl->dsr & FD_DSR_DRATEMASK) != cur_drv->media_rate) {

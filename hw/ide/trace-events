@@ -50,6 +50,10 @@ sii3112_set_irq(int channel, int level) "channel %d level %d"
 bmdma_read_via(uint64_t addr, uint32_t val) "bmdma: readb 0x%"PRIx64" : 0x%02x"
 bmdma_write_via(uint64_t addr, uint64_t val) "bmdma: writeb 0x%"PRIx64" : 0x%02"PRIx64
 
+# m1543.c
+bmdma_read_m1543(uint64_t addr, uint32_t val) "bmdma: readb 0x%"PRIx64" : 0x%02x"
+bmdma_write_m1543(uint64_t addr, uint64_t val) "bmdma: writeb 0x%"PRIx64" : 0x%02"PRIx64
+
 # atapi.c
 cd_read_sector_sync(int lba) "lba=%d"
 cd_read_sector_cb(int lba, int ret) "lba=%d ret=%d"

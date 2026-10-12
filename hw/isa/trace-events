@@ -23,6 +23,25 @@ via_pm_io_write(uint32_t addr, uint32_t val, int len) "addr 0x%x val 0x%x len 0x
 via_superio_read(uint8_t addr, uint8_t val) "addr 0x%x val 0x%x"
 via_superio_write(uint8_t addr, uint32_t val) "addr 0x%x val 0x%x"
 
+# m1543.c
+m1543_request_i8259_irq(int level) "level=%d"
+m1543_set_irq_pic(int irq, int level) "irq=%d level=%d"
+m1543_isa_write(uint32_t addr, uint32_t val, int len) "addr=0x%x val=0x%x len=%u"
+m1543_pm_read(uint32_t addr, uint32_t val, int len) "addr=0x%x val=0x%x len=%u"
+m1543_pm_write(uint32_t addr, uint32_t val, int len) "addr=0x%x val=0x%x len=%u"
+m1543_pm_io_read(uint32_t addr, uint32_t val, int len) "addr=0x%x val=0x%x len=%u"
+m1543_pm_io_write(uint32_t addr, uint32_t val, int len) "addr=0x%x val=0x%x len=%u"
+m1543_superio_read(uint32_t addr, uint32_t val) "addr=0x%x val=0x%x"
+m1543_superio_write(uint32_t addr, uint32_t val) "addr=0x%x val=0x%x"
+m1543_superio_cfg_read(uint32_t dev, uint32_t addr, uint32_t val) "dev=0x%x addr=0x%x val=0x%x"
+m1543_superio_cfg_write(uint32_t dev, uint32_t addr, uint32_t val) "dev=0x%x addr=0x%x val=0x%x"
+m1543_superio_cfg_commit(const char *device, uint32_t logical_dev, int instance, uint32_t enabled, uint32_t iobase) "device=%s%d logical_dev=0x%x iobase=0x%x enabled=%d"
+m1543_ioport80_write(uint32_t val) "val=0x%02x"
+m1543_ioport92_read(uint8_t val) "val=0x%02x"
+m1543_ioport92_write(uint8_t val) "val=0x%02x"
+m1543_intx_pin_to_irq(int pin, int irq) "pin=%d irq=%d"
+m1543_set_irq(int irq, int level) "irq=%d level=%d"
+
 # lpc_ich9.c
 ich9_cc_write(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
 ich9_cc_read(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"

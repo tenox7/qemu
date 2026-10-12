@@ -1,505 +1,558 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- *  Alpha emulation cpu definitions for qemu.
- *
- *  Copyright (c) 2007 Jocelyn Mayer
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * QEMU Alpha CPU
  */
 
-#ifndef ALPHA_CPU_H
-#define ALPHA_CPU_H
+#ifndef _ALPHA_CPU_H
+#define _ALPHA_CPU_H
 
-#include "cpu-qom.h"
-#include "exec/cpu-common.h"
-#include "exec/cpu-interrupt.h"
 #include "qemu/cpu-float.h"
+#include "qemu/timer.h"
+#include "exec/cpu-defs.h"
+#include "exec/cpu-interrupt.h"
+#include "system/memory.h"
+#include "exec/page-protection.h"
+#include "hw/core/clock.h"
+#include "hw/core/registerfields.h"
+#include "qom/object.h"
+#include "qapi/qapi-types-common.h"
+#include "cpu-bits.h"
+#include "cpu-features.h"
+#include "cpu-ipr.h"
+#include "cpu-qom.h"
 
-#define ICACHE_LINE_SIZE 32
-#define DCACHE_LINE_SIZE 32
-
-/* Alpha major type */
-enum {
-    ALPHA_EV3  = 1,
-    ALPHA_EV4  = 2,
-    ALPHA_SIM  = 3,
-    ALPHA_LCA  = 4,
-    ALPHA_EV5  = 5, /* 21164 */
-    ALPHA_EV45 = 6, /* 21064A */
-    ALPHA_EV56 = 7, /* 21164A */
-};
-
-/* EV4 minor type */
-enum {
-    ALPHA_EV4_2 = 0,
-    ALPHA_EV4_3 = 1,
-};
-
-/* LCA minor type */
-enum {
-    ALPHA_LCA_1 = 1, /* 21066 */
-    ALPHA_LCA_2 = 2, /* 20166 */
-    ALPHA_LCA_3 = 3, /* 21068 */
-    ALPHA_LCA_4 = 4, /* 21068 */
-    ALPHA_LCA_5 = 5, /* 21066A */
-    ALPHA_LCA_6 = 6, /* 21068A */
-};
-
-/* EV5 minor type */
-enum {
-    ALPHA_EV5_1 = 1, /* Rev BA, CA */
-    ALPHA_EV5_2 = 2, /* Rev DA, EA */
-    ALPHA_EV5_3 = 3, /* Pass 3 */
-    ALPHA_EV5_4 = 4, /* Pass 3.2 */
-    ALPHA_EV5_5 = 5, /* Pass 4 */
-};
-
-/* EV45 minor type */
-enum {
-    ALPHA_EV45_1 = 1, /* Pass 1 */
-    ALPHA_EV45_2 = 2, /* Pass 1.1 */
-    ALPHA_EV45_3 = 3, /* Pass 2 */
-};
-
-/* EV56 minor type */
-enum {
-    ALPHA_EV56_1 = 1, /* Pass 1 */
-    ALPHA_EV56_2 = 2, /* Pass 2 */
-};
-
-enum {
-    IMPLVER_2106x = 0, /* EV4, EV45 & LCA45 */
-    IMPLVER_21164 = 1, /* EV5, EV56 & PCA45 */
-    IMPLVER_21264 = 2, /* EV6, EV67 & EV68x */
-    IMPLVER_21364 = 3, /* EV7 & EV79 */
-};
-
-enum {
-    AMASK_BWX      = 0x00000001,
-    AMASK_FIX      = 0x00000002,
-    AMASK_CIX      = 0x00000004,
-    AMASK_MVI      = 0x00000100,
-    AMASK_TRAP     = 0x00000200,
-    AMASK_PREFETCH = 0x00001000,
-};
-
-enum {
-    VAX_ROUND_NORMAL = 0,
-    VAX_ROUND_CHOPPED,
-};
-
-enum {
-    IEEE_ROUND_NORMAL = 0,
-    IEEE_ROUND_DYNAMIC,
-    IEEE_ROUND_PLUS,
-    IEEE_ROUND_MINUS,
-    IEEE_ROUND_CHOPPED,
-};
-
-/* IEEE floating-point operations encoding */
-/* Trap mode */
-enum {
-    FP_TRAP_I   = 0x0,
-    FP_TRAP_U   = 0x1,
-    FP_TRAP_S  = 0x4,
-    FP_TRAP_SU  = 0x5,
-    FP_TRAP_SUI = 0x7,
-};
-
-/* Rounding mode */
-enum {
-    FP_ROUND_CHOPPED = 0x0,
-    FP_ROUND_MINUS   = 0x1,
-    FP_ROUND_NORMAL  = 0x2,
-    FP_ROUND_DYNAMIC = 0x3,
-};
-
-/* FPCR bits -- right-shifted 32 so we can use a uint32_t.  */
-#define FPCR_SUM                (1U << (63 - 32))
-#define FPCR_INED               (1U << (62 - 32))
-#define FPCR_UNFD               (1U << (61 - 32))
-#define FPCR_UNDZ               (1U << (60 - 32))
-#define FPCR_DYN_SHIFT          (58 - 32)
-#define FPCR_DYN_CHOPPED        (0U << FPCR_DYN_SHIFT)
-#define FPCR_DYN_MINUS          (1U << FPCR_DYN_SHIFT)
-#define FPCR_DYN_NORMAL         (2U << FPCR_DYN_SHIFT)
-#define FPCR_DYN_PLUS           (3U << FPCR_DYN_SHIFT)
-#define FPCR_DYN_MASK           (3U << FPCR_DYN_SHIFT)
-#define FPCR_IOV                (1U << (57 - 32))
-#define FPCR_INE                (1U << (56 - 32))
-#define FPCR_UNF                (1U << (55 - 32))
-#define FPCR_OVF                (1U << (54 - 32))
-#define FPCR_DZE                (1U << (53 - 32))
-#define FPCR_INV                (1U << (52 - 32))
-#define FPCR_OVFD               (1U << (51 - 32))
-#define FPCR_DZED               (1U << (50 - 32))
-#define FPCR_INVD               (1U << (49 - 32))
-#define FPCR_DNZ                (1U << (48 - 32))
-#define FPCR_DNOD               (1U << (47 - 32))
-#define FPCR_STATUS_MASK        (FPCR_IOV | FPCR_INE | FPCR_UNF \
-                                 | FPCR_OVF | FPCR_DZE | FPCR_INV)
-
-/* The silly software trap enables implemented by the kernel emulation.
-   These are more or less architecturally required, since the real hardware
-   has read-as-zero bits in the FPCR when the features aren't implemented.
-   For the purposes of QEMU, we pretend the FPCR can hold everything.  */
-#define SWCR_TRAP_ENABLE_INV    (1U << 1)
-#define SWCR_TRAP_ENABLE_DZE    (1U << 2)
-#define SWCR_TRAP_ENABLE_OVF    (1U << 3)
-#define SWCR_TRAP_ENABLE_UNF    (1U << 4)
-#define SWCR_TRAP_ENABLE_INE    (1U << 5)
-#define SWCR_TRAP_ENABLE_DNO    (1U << 6)
-#define SWCR_TRAP_ENABLE_MASK   ((1U << 7) - (1U << 1))
-
-#define SWCR_MAP_DMZ            (1U << 12)
-#define SWCR_MAP_UMZ            (1U << 13)
-#define SWCR_MAP_MASK           (SWCR_MAP_DMZ | SWCR_MAP_UMZ)
-
-#define SWCR_STATUS_INV         (1U << 17)
-#define SWCR_STATUS_DZE         (1U << 18)
-#define SWCR_STATUS_OVF         (1U << 19)
-#define SWCR_STATUS_UNF         (1U << 20)
-#define SWCR_STATUS_INE         (1U << 21)
-#define SWCR_STATUS_DNO         (1U << 22)
-#define SWCR_STATUS_MASK        ((1U << 23) - (1U << 17))
-
-#define SWCR_STATUS_TO_EXCSUM_SHIFT  16
-
-#define SWCR_MASK  (SWCR_TRAP_ENABLE_MASK | SWCR_MAP_MASK | SWCR_STATUS_MASK)
-
-/* MMU modes definitions */
-
-/* Alpha has 5 MMU modes: PALcode, Kernel, Executive, Supervisor, and User.
-   The Unix PALcode only exposes the kernel and user modes; presumably
-   executive and supervisor are used by VMS.
-
-   PALcode itself uses physical mode for code and kernel mode for data;
-   there are PALmode instructions that can access data via physical mode
-   or via an os-installed "alternate mode", which is one of the 4 above.
-
-   That said, we're only emulating Unix PALcode, and not attempting VMS,
-   so we don't need to implement Executive and Supervisor.  QEMU's own
-   PALcode cheats and uses the KSEG mapping for its code+data rather than
-   physical addresses.  */
-
-#define MMU_KERNEL_IDX   0
-#define MMU_USER_IDX     1
-#define MMU_PHYS_IDX     2
-
-typedef struct CPUArchState {
-    uint64_t ir[31];
-    float64 fir[31];
-    uint64_t pc;
-    uint64_t unique;
-    uint64_t lock_addr;
-    uint64_t lock_value;
-
-    /* The FPCR, and disassembled portions thereof.  */
-    uint32_t fpcr;
 #ifdef CONFIG_USER_ONLY
-    uint32_t swcr;
-#endif
-    uint32_t fpcr_exc_enable;
-    float_status fp_status;
-    uint8_t fpcr_dyn_round;
-    uint8_t fpcr_flush_to_zero;
-
-    /* Mask of PALmode, Processor State et al.  Most of this gets copied
-       into the TranslatorBlock flags and controls code generation.  */
-    uint32_t flags;
-
-    /* The high 32-bits of the processor cycle counter.  */
-    uint32_t pcc_ofs;
-
-    /* These pass data from the exception logic in the translator and
-       helpers to the OS entry point.  This is used for both system
-       emulation and user-mode.  */
-    uint64_t trap_arg0;
-    uint64_t trap_arg1;
-    uint64_t trap_arg2;
-
-#if !defined(CONFIG_USER_ONLY)
-    /* The internal data required by our emulation of the Unix PALcode.  */
-    uint64_t exc_addr;
-    uint64_t palbr;
-    uint64_t ptbr;
-    uint64_t vptptr;
-    uint64_t sysval;
-    uint64_t usp;
-    uint64_t shadow[8];
-    uint64_t scratch[24];
+#error "Alpha does not support user mode"
 #endif
 
-    /* This alarm doesn't exist in real hardware; we wish it did.  */
-    uint64_t alarm_expire;
+#define CPU_RESOLVING_TYPE      TYPE_ALPHA_CPU
 
-    int error_code;
+/*
+ * Alpha-specific interrupt pending bits.
+ */
+#define CPU_INTERRUPT_ASTIRQ    CPU_INTERRUPT_TGT_INT_0
+#define CPU_INTERRUPT_SIRQ      CPU_INTERRUPT_TGT_INT_1
 
-    uint32_t features;
-    uint32_t amask;
-    int implver;
+/*
+ * Alpha exception vector definitions.
+ *
+ * NB: add new EXCP_ defines to the array in alpha_log_exception() too!
+ */
+enum {
+    EXCP_NONE = -1,
+    /* External exceptions. */
+    EXCP_DTBM_DOUBLE_3,         /* DTB double miss (43-bit VA) */
+    EXCP_DTBM_DOUBLE_4,         /* DTB double miss exception (48-bit VA) */
+    EXCP_FEN,                   /* Floating-point unavailable exception */
+    EXCP_UNALIGNED,             /* Unaligned load/store exception */
+    EXCP_DTBM_SINGLE,           /* DTB single miss exception */
+    EXCP_DFAULT,                /* DTB fault exception */
+    EXCP_OPCDEC,                /* Illegal instruction exception */
+    EXCP_IACV,                  /* ITB access violation exception */
+    EXCP_MCHK,                  /* Machine check exception */
+    EXCP_ITB_MISS,              /* ITB miss exception */
+    EXCP_ARITH,                 /* Arithmetic exception */
+    EXCP_IRQ,                   /* External interrupt request exception */
+    EXCP_MT_FPCR,               /* MT_FPCR exception */
+    EXCP_RESET,                 /* Reset/wake exception */
+    EXCP_CALL_PAL,              /* CALL_PAL instruction */
+    /* Internal exceptions. */
+    EXCP_ASTIRQ,                /* AST interrupt assertion */
+    EXCP_SIRQ,                  /* Software interrupt assertion */
+    EXCP_HW_REI,                /* HW_REI/HW_RET instruction */
+    EXCP_LAST,
+};
+
+/*
+ * Alpha hardware interrupt sources.
+ */
+enum {
+    ALPHA_CPU_INPUT_IRQ0,
+    ALPHA_CPU_INPUT_IRQ1,
+    ALPHA_CPU_INPUT_IRQ2,
+    ALPHA_CPU_INPUT_IRQ3,
+    ALPHA_CPU_INPUT_IRQ4,
+    ALPHA_CPU_INPUT_IRQ5,
+    ALPHA_CPU_INPUT_PWRFAIL,
+    ALPHA_CPU_INPUT_MCHK,
+    ALPHA_CPU_INPUT_HLT,
+    ALPHA_CPU_INPUT_CRR,
+    ALPHA_CPU_INPUT_SLR,
+    ALPHA_CPU_INPUT_PC0,
+    ALPHA_CPU_INPUT_PC1,
+    ALPHA_CPU_INPUT_PC2,
+    ALPHA_CPU_INPUT_COUNT,
+};
+
+/*
+ * Alpha memory management unit state.
+ */
+#define MAX_TLB_ENTRIES         128
+
+typedef struct CPUAlphaTLBEntry {
+    uint64_t vaddr;
+    uint64_t paddr;
+    uint64_t match_mask;
+    uint64_t keep_mask;
+    uint16_t flags;
+    uint8_t asn;
+} CPUAlphaTLBEntry;
+
+typedef struct CPUAlphaTLBContext {
+    uint8_t last_way;   /* last used way used to allocate TLB in a LRU way */
+    CPUAlphaTLBEntry entries[MAX_TLB_ENTRIES];
+} CPUAlphaTLBContext;
+
+FIELD(PTE, VALID, 0, 1)
+FIELD(PTE, FOR, 1, 1)
+FIELD(PTE, FOW, 2, 1)
+FIELD(PTE, ASM, 4, 1)
+FIELD(PTE, GH, 5, 2)
+FIELD(PTE, KRE, 8, 1)
+FIELD(PTE, ERE, 9, 1)
+FIELD(PTE, SRE, 10, 1)
+FIELD(PTE, URE, 11, 1)
+FIELD(PTE, KWE, 12, 1)
+FIELD(PTE, EWE, 13, 1)
+FIELD(PTE, SWE, 14, 1)
+FIELD(PTE, UWE, 15, 1)
+
+/**
+ * CPUAlphaState:
+ *
+ * The whole Alpha CPU context.
+ */
+typedef struct CPUArchState {
+    uint64_t gpregs[32];        /* general purpose registers */
+    uint64_t fpregs[32];        /* floating point registers */
+    uint64_t pc;                /* program counter */
+    uint64_t rc;
+    bool pal_mode;              /* true if the CPU is in PAL mode */
+
+    /* Cached TBFLAGS state. */
+    uint32_t hflags;
+
+    /*
+     * Floating point state.
+     *
+     * We store several fpcr fields separately for convenience.
+     */
+    uint32_t fpcr;              /* floating point control register */
+    uint32_t fpcr_dyn_round;
+    bool fpcr_flush_to_zero;
+    float_status fp_status;     /* floating point execution context */
+
+    /* Load locked/store conditional state. */
+#define LLSC_ADDR_NONE  (-1ULL) /* use -1 to indicate no active lock */
+    uint64_t llsc_addr;
+    uint64_t llsc_val;
+
+    /* Composite state for the cycle counter. */
+    uint64_t cc_ns_then;
+    uint64_t cc_ticks_then;
+
+    /* Information associated with an exception about to be taken. */
+    uint64_t excp_stats[EXCP_LAST];
+    struct {
+        uint32_t syndrome;      /* error syndrome */
+        uint64_t vaddress;      /* VA associated with exception, if any */
+    } exception;
+
+    /* Internal processor registers. */
+    uint64_t pal_shadow[8];
+    struct {
+        uint64_t aster;
+        uint64_t astrr;
+        uint64_t abox_ctl;
+        uint64_t biu_addr;
+        uint64_t biu_stat;
+        uint64_t cc;
+        uint64_t cc_ctl;
+        union {
+            uint64_t dc_ctl;
+            uint64_t dc_mode;
+        };
+        union {
+            uint64_t altmode;
+            uint64_t dtb_altmode;
+        };
+        uint64_t dtb_cm;
+        uint64_t dtb_pte;
+        uint64_t dtb_pte_temp;
+        uint64_t dtb_asn[2];
+        uint64_t dtb_tag[2];
+        uint64_t exc_addr;
+        uint64_t exc_mask;
+        uint64_t exc_sum;
+        uint64_t hier;
+        union {
+            uint64_t i_ctl;
+            uint64_t icsr;
+            uint64_t iccsr;
+        };
+        union {
+            uint64_t icm;
+            uint64_t ier_cm;
+            uint64_t ps;
+        };
+        uint64_t itb_asn;
+        uint64_t itb_tag;
+        uint64_t itb_pte;
+        uint64_t itb_pte_temp;
+        uint64_t ipl;
+        uint64_t ivptbr;
+        union {
+            uint64_t m_ctl;
+            uint64_t mcsr;
+        };
+        union {
+            uint64_t mm_stat;
+            uint64_t mmcsr;
+        };
+        uint64_t mvptbr;
+        uint64_t pal_base;
+        union {
+            uint64_t pctr_ctl;
+            uint64_t pmctr;
+        };
+        uint64_t pctx;
+        uint64_t sier;
+        uint64_t sirr;
+        uint64_t tb_ctl;
+        uint64_t tb_tag;
+        uint64_t pmpc;
+        uint64_t va;
+        uint64_t va_ctl;
+        uint64_t temp[32];
+    } ipr;
+
+    /* Interrupt request state. */
+    uint32_t irq_line_state;
+
+    /* TLB context, only relevant for full system emulation. */
+    CPUAlphaTLBContext tlb[2];
+
+    /* Fields up to this point are cleared by a CPU reset. */
+    struct {} end_reset_fields;
+
+    /* Fields from here on are preserved across CPU reset. */
+    int bfd_mach;
+    uint64_t excp_vectors[EXCP_LAST];   /* exception vectors */
+    uint64_t hreset_vector;
+    uint64_t features;
+    uint32_t amask;             /* architectural AMASK value */
+    uint32_t implver;           /* implementation version */
 } CPUAlphaState;
+
+/* CPU power state. */
+typedef enum AlphaCPUPowerState {
+    CPU_POWER_ON = 0,
+    CPU_POWER_OFF = 1,
+} AlphaCPUPowerState;
+
+/**
+ * AlphaCPUAlias:
+ * @alias: The alias name.
+ * @model: The CPU model @alias refers to, that directly resolves into CPU type
+ *
+ * A mapping entry from CPU @alias to CPU @model.
+ */
+typedef struct AlphaCPUAlias {
+    const char *alias;
+    const char *model;
+} AlphaCPUAlias;
+
+extern const AlphaCPUAlias alpha_cpu_aliases[];
 
 /**
  * AlphaCPU:
  * @env: #CPUAlphaState
  *
- * An Alpha CPU.
+ * An Alpha CPU core.
  */
 struct ArchCPU {
     CPUState parent_obj;
-
     CPUAlphaState env;
 
-    /* This alarm doesn't exist in real hardware; we wish it did.  */
-    QEMUTimer *alarm_timer;
+    /* Implementation versions and feature sets. */
+    int bfd_mach;
+    uint64_t chip_id;
+    uint64_t proc_id;
+    uint64_t isa_implver;
+    uint64_t isa_amask;
+
+    /* Target clock frequency. */
+    Clock *refclk;
+    Clock *sysclk_div;          /* divider for the RPCC clock */
+    Clock *sysclk;              /* RPCC clock */
+
+    /* IPR definitions. */
+    GHashTable *ipregs;
+
+    /*
+     * For marshalling register state between two QEMUs (for migration),
+     * we use these arrays.
+     */
+    uint64_t *ipreg_indexes;
+    uint64_t *ipreg_values;
+    int32_t ipreg_array_len;
+
+    /*
+     * These are used only for migration: incoming data arrives in
+     * these fields and is sanity checked in post_load before copying
+     * to the working data structures above.
+     */
+    uint64_t *ipreg_vmstate_indexes;
+    uint64_t *ipreg_vmstate_values;
+    int32_t ipreg_vmstate_array_len;
+
+    /* Current power state, access guarded by BQL */
+    AlphaCPUPowerState power_state;
 };
+
+typedef struct AlphaCPUInfo {
+    const char *name;
+    void (*initfn)(Object *obj);
+    void (*class_init)(ObjectClass *oc, const void *data);
+} AlphaCPUInfo;
 
 /**
  * AlphaCPUClass:
  * @parent_realize: The parent class' realize handler.
+ * @parent_phases: The parent class' reset phase handlers.
  *
  * An Alpha CPU model.
  */
 struct AlphaCPUClass {
     CPUClass parent_class;
 
+    const AlphaCPUInfo *info;
     DeviceRealize parent_realize;
+    DeviceUnrealize parent_unrealize;
+    ResettablePhases parent_phases;
 };
 
-#ifndef CONFIG_USER_ONLY
-extern const VMStateDescription vmstate_alpha_cpu;
+extern const struct VMStateDescription vmstate_alpha_cpu;
 
-void alpha_cpu_do_interrupt(CPUState *cpu);
-bool alpha_cpu_exec_interrupt(CPUState *cpu, int int_req);
-bool alpha_cpu_translate_for_debug(CPUState *cpu, vaddr addr,
-                                   TranslateForDebugResult *result);
-#endif /* !CONFIG_USER_ONLY */
-const char *alpha_exception_name(int exception);
-void alpha_cpu_dump_state(CPUState *cs, FILE *f, int flags);
+void alpha_cpu_post_init(Object *obj);
+void alpha_cpu_dump_state(CPUState *cs, FILE *f, int);
+void alpha_cpu_dump_iprs(CPUState *cs);
+void alpha_cpu_dump_mmu(CPUState *cs);
 int alpha_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int alpha_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-
-enum {
-    FEATURE_ASN    = 0x00000001,
-    FEATURE_SPS    = 0x00000002,
-    FEATURE_VIRBND = 0x00000004,
-    FEATURE_TBCHK  = 0x00000008,
-};
-
-enum {
-    EXCP_RESET,
-    EXCP_MCHK,
-    EXCP_SMP_INTERRUPT,
-    EXCP_CLK_INTERRUPT,
-    EXCP_DEV_INTERRUPT,
-    EXCP_MMFAULT,
-    EXCP_UNALIGN,
-    EXCP_OPCDEC,
-    EXCP_ARITH,
-    EXCP_FEN,
-    EXCP_CALL_PAL,
-};
-
-/* Alpha-specific interrupt pending bits.  */
-#define CPU_INTERRUPT_TIMER     CPU_INTERRUPT_TGT_EXT_0
-#define CPU_INTERRUPT_SMP       CPU_INTERRUPT_TGT_EXT_1
-#define CPU_INTERRUPT_MCHK      CPU_INTERRUPT_TGT_EXT_2
-
-/* OSF/1 Page table bits.  */
-enum {
-    PTE_VALID = 0x0001,
-    PTE_FOR   = 0x0002,  /* used for page protection (fault on read) */
-    PTE_FOW   = 0x0004,  /* used for page protection (fault on write) */
-    PTE_FOE   = 0x0008,  /* used for page protection (fault on exec) */
-    PTE_ASM   = 0x0010,
-    PTE_KRE   = 0x0100,
-    PTE_URE   = 0x0200,
-    PTE_KWE   = 0x1000,
-    PTE_UWE   = 0x2000
-};
-
-/* Hardware interrupt (entInt) constants.  */
-enum {
-    INT_K_IP,
-    INT_K_CLK,
-    INT_K_MCHK,
-    INT_K_DEV,
-    INT_K_PERF,
-};
-
-/* Memory management (entMM) constants.  */
-enum {
-    MM_K_TNV,
-    MM_K_ACV,
-    MM_K_FOR,
-    MM_K_FOE,
-    MM_K_FOW
-};
-
-/* Arithmetic exception (entArith) constants.  */
-enum {
-    EXC_M_SWC = 1,      /* Software completion */
-    EXC_M_INV = 2,      /* Invalid operation */
-    EXC_M_DZE = 4,      /* Division by zero */
-    EXC_M_FOV = 8,      /* Overflow */
-    EXC_M_UNF = 16,     /* Underflow */
-    EXC_M_INE = 32,     /* Inexact result */
-    EXC_M_IOV = 64      /* Integer Overflow */
-};
-
-/* Processor status constants.  */
-/* Low 3 bits are interrupt mask level.  */
-#define PS_INT_MASK   7u
-
-/* Bits 4 and 5 are the mmu mode.  The VMS PALcode uses all 4 modes;
-   The Unix PALcode only uses bit 4.  */
-#define PS_USER_MODE  8u
-
-/* CPUAlphaState->flags constants.  These are laid out so that we
-   can set or reset the pieces individually by assigning to the byte,
-   or manipulated as a whole.  */
-
-#define ENV_FLAG_PAL_SHIFT    0
-#define ENV_FLAG_PS_SHIFT     8
-#define ENV_FLAG_RX_SHIFT     16
-#define ENV_FLAG_FEN_SHIFT    24
-
-#define ENV_FLAG_PAL_MODE     (1u << ENV_FLAG_PAL_SHIFT)
-#define ENV_FLAG_PS_USER      (PS_USER_MODE << ENV_FLAG_PS_SHIFT)
-#define ENV_FLAG_RX_FLAG      (1u << ENV_FLAG_RX_SHIFT)
-#define ENV_FLAG_FEN          (1u << ENV_FLAG_FEN_SHIFT)
-
-#define ENV_FLAG_TB_MASK \
-    (ENV_FLAG_PAL_MODE | ENV_FLAG_PS_USER | ENV_FLAG_FEN)
-
-#define TB_FLAG_UNALIGN       (1u << 1)
-
-static inline int alpha_env_mmu_index(CPUAlphaState *env)
-{
-    int ret = env->flags & ENV_FLAG_PS_USER ? MMU_USER_IDX : MMU_KERNEL_IDX;
-    if (env->flags & ENV_FLAG_PAL_MODE) {
-        ret = MMU_KERNEL_IDX;
-    }
-    return ret;
-}
-
-enum {
-    IR_V0   = 0,
-    IR_T0   = 1,
-    IR_T1   = 2,
-    IR_T2   = 3,
-    IR_T3   = 4,
-    IR_T4   = 5,
-    IR_T5   = 6,
-    IR_T6   = 7,
-    IR_T7   = 8,
-    IR_S0   = 9,
-    IR_S1   = 10,
-    IR_S2   = 11,
-    IR_S3   = 12,
-    IR_S4   = 13,
-    IR_S5   = 14,
-    IR_S6   = 15,
-    IR_FP   = IR_S6,
-    IR_A0   = 16,
-    IR_A1   = 17,
-    IR_A2   = 18,
-    IR_A3   = 19,
-    IR_A4   = 20,
-    IR_A5   = 21,
-    IR_T8   = 22,
-    IR_T9   = 23,
-    IR_T10  = 24,
-    IR_T11  = 25,
-    IR_RA   = 26,
-    IR_T12  = 27,
-    IR_PV   = IR_T12,
-    IR_AT   = 28,
-    IR_GP   = 29,
-    IR_SP   = 30,
-    IR_ZERO = 31,
-};
-
-void alpha_translate_init(void);
-void alpha_translate_code(CPUState *cs, TranslationBlock *tb,
-                          int *max_insns, vaddr pc, void *host_pc);
-
-#define CPU_RESOLVING_TYPE TYPE_ALPHA_CPU
-
-G_NORETURN void dynamic_excp(CPUAlphaState *, uintptr_t, int, int);
-G_NORETURN void arith_excp(CPUAlphaState *, uintptr_t, int, uint64_t);
-
-uint64_t cpu_alpha_load_fpcr (CPUAlphaState *env);
-void cpu_alpha_store_fpcr (CPUAlphaState *env, uint64_t val);
-uint64_t cpu_alpha_load_gr(CPUAlphaState *env, unsigned reg);
-void cpu_alpha_store_gr(CPUAlphaState *env, unsigned reg, uint64_t val);
-
-#ifdef CONFIG_USER_ONLY
-void alpha_cpu_record_sigsegv(CPUState *cs, vaddr address,
-                              MMUAccessType access_type,
-                              bool maperr, uintptr_t retaddr);
-void alpha_cpu_record_sigbus(CPUState *cs, vaddr address,
-                             MMUAccessType access_type, uintptr_t retaddr);
-#else
+uint64_t alpha_cpu_get_reg_value(CPUAlphaState *env, int ra);
+void alpha_cpu_set_reg_value(CPUAlphaState *env, int ra, uint64_t val);
+void alpha_cpu_do_interrupt(CPUState *cpu);
+void alpha_cpu_do_system_reset(CPUState *cs);
+bool alpha_cpu_exec_interrupt(CPUState *cpu, int interrupt_request);
+void alpha_cpu_set_pc(CPUState *cs, vaddr value);
+vaddr alpha_cpu_get_pc(CPUState *cs);
+hwaddr alpha_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
+int alpha_cpu_write_elf64_note(WriteCoreDumpFunction f, CPUState *cs,
+                               int cpuid, DumpState *s);
+int alpha_cpu_write_elf32_note(WriteCoreDumpFunction f, CPUState *cs,
+                               int cpuid, DumpState *s);
+void alpha_cpu_get_dump_info(const CPUState *cs, ArchDumpInfo *info,
+                             const GuestPhysBlockList *guest_phys_blocks);
+size_t alpha_cpu_get_note_size(const CPUState *cs, int class, int machine,
+                               int nr_cpus);
 bool alpha_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                         MMUAccessType access_type, int mmu_idx,
                         bool probe, uintptr_t retaddr);
-G_NORETURN void alpha_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
-                                              MMUAccessType access_type, int mmu_idx,
-                                              uintptr_t retaddr);
-void alpha_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
-                                     vaddr addr, unsigned size,
-                                     MMUAccessType access_type,
-                                     int mmu_idx, MemTxAttrs attrs,
-                                     MemTxResult response, uintptr_t retaddr);
-#endif
+ObjectClass *alpha_cpu_class_by_name(const char *name);
+void alpha_cpu_list(void);
 
-#ifdef CONFIG_USER_ONLY
-/* Copied from linux ieee_swcr_to_fpcr.  */
-static inline uint64_t alpha_ieee_swcr_to_fpcr(uint64_t swcr)
+void cpu_interrupt_exittb(CPUState *cs);
+void cpu_get_tb_cpu_state(CPUAlphaState *env, vaddr *pc,
+                          uint64_t *cs_base, uint32_t *flags);
+#define cpu_list alpha_cpu_list
+
+/*
+ * Alpha floating-point control register definitions.
+ */
+#define FPCR_BIT_NR(bit)        ALPHA_BIT32_NR(bit)
+#define FPCR_BIT(bit)           ALPHA_BIT32(bit)
+
+#define FPCR_SUM                FPCR_BIT(63)
+#define FPCR_INED               FPCR_BIT(62)
+#define FPCR_UNFD               FPCR_BIT(61)
+#define FPCR_UNDZ               FPCR_BIT(60)
+#define FPCR_IOV                FPCR_BIT(57)
+#define FPCR_INE                FPCR_BIT(56)
+#define FPCR_UNF                FPCR_BIT(55)
+#define FPCR_OVF                FPCR_BIT(54)
+#define FPCR_DZE                FPCR_BIT(53)
+#define FPCR_INV                FPCR_BIT(52)
+#define FPCR_OVFD               FPCR_BIT(51)
+#define FPCR_DZED               FPCR_BIT(50)
+#define FPCR_INVD               FPCR_BIT(49)
+#define FPCR_DNZ                FPCR_BIT(48)
+#define FPCR_DNOD               FPCR_BIT(47)
+#define FPCR_DISABLE_MASK       (FPCR_INED | FPCR_UNFD | FPCR_OVFD \
+                                 | FPCR_DZED | FPCR_INVD)
+#define FPCR_STATUS_MASK        (FPCR_IOV | FPCR_INE | FPCR_UNF \
+                                 | FPCR_OVF | FPCR_DZE | FPCR_INV)
+#define FPCR_STATUS_SHIFT       FPCR_BIT_NR(52)
+
+#define FPCR_DYN_SHIFT          FPCR_BIT_NR(58)
+#define FPCR_DYN_CHOPPED        (0 << FPCR_DYN_SHIFT)
+#define FPCR_DYN_MINUS          (1 << FPCR_DYN_SHIFT)
+#define FPCR_DYN_NORMAL         (2 << FPCR_DYN_SHIFT)
+#define FPCR_DYN_PLUS           (3 << FPCR_DYN_SHIFT)
+#define FPCR_DYN_MASK           (3 << FPCR_DYN_SHIFT)
+#define FPCR_MASK               (FPCR_DISABLE_MASK | FPCR_STATUS_MASK \
+                                 | FPCR_DYN_MASK | FPCR_UNDZ | FPCR_DNZ | FPCR_DNOD)
+
+/**
+ * alpha_cpu_get_fpcr: Return the current FPCR value.
+ * @env: CPU context
+ */
+uint64_t alpha_cpu_get_fpcr(CPUAlphaState *env);
+
+/**
+ * alpha_cpu_set_fpcr: Write a new FPCR value.
+ * @env: CPU context
+ * @value: new value
+ */
+void alpha_cpu_set_fpcr(CPUAlphaState *env, uint64_t value);
+
+/**
+ * write_list_to_cpustate
+ * @cpu: AlphaCPU
+ *
+ * For each register listed in the AlphaCPU ipreg_indexes list, write
+ * its value from the cpreg_values list into the AlphaCPUState structure.
+ * This updates TCG's working data structures from incoming migration state.
+ *
+ * Returns: true if all register values were updated correctly,
+ * false if some register was unknown or could not be written.
+ * Note that we do not stop early on failure -- we will attempt
+ * writing all registers in the list.
+ */
+bool write_list_to_cpustate(AlphaCPU *cpu);
+
+/**
+ * write_cpustate_to_list:
+ * @cpu: AlphaCPU
+ *
+ * For each register listed in the AlphaCPU ipreg_indexes list, write
+ * its value from the AlphaCPUState structure into the ipreg_values list.
+ * This is used to copy info from TCG's working data structures
+ * for outbound migration.
+ *
+ * Returns: true if all register values were read correctly,
+ * false if some register was unknown or could not be read.
+ * Note that we do not stop early on failure -- we will attempt
+ * reading all registers in the list.
+ */
+bool write_cpustate_to_list(AlphaCPU *cpu);
+
+/*
+ * Alpha MMU definitions.
+ */
+typedef enum AlphaMMUIdx {
+    /* Core TLBs. */
+    AlphaMMUIdx_Kernel,
+    AlphaMMUIdx_Executive,
+    AlphaMMUIdx_Supervisor,
+    AlphaMMUIdx_User,
+
+    /* TLBs with 1:1 mapping to the physical address space. */
+    AlphaMMUIdx_PAL,
+    AlphaMMUIdx_Physical,
+
+    /* Virtual TLBs used to make handling hw_ld and hw_st less painful. */
+    AlphaMMUIdx_Privileged,
+    AlphaMMUIdx_PrivilegedVPTE,
+    AlphaMMUIdx_PrivilegedWChk,
+    AlphaMMUIdx_AltMode,
+    AlphaMMUIdx_AltModeWChk,
+} AlphaMMUIdx;
+
+#define MMU_USER_IDX 3
+QEMU_BUILD_BUG_ON(MMU_USER_IDX != AlphaMMUIdx_User);
+
+/*
+ * Bit macros for the core-mmu-index values for each index, for use when
+ * calling tlb_flush_by_mmuidx() and friends.
+ */
+#define MMUIDX_TO_BIT(NAME) \
+    AlphaMMUIdxBit_##NAME = 1 << (AlphaMMUIdx_##NAME)
+
+typedef enum AlphaMMUIdxBit {
+    MMUIDX_TO_BIT(Kernel),
+    MMUIDX_TO_BIT(Executive),
+    MMUIDX_TO_BIT(Supervisor),
+    MMUIDX_TO_BIT(User),
+    MMUIDX_TO_BIT(PAL),
+    MMUIDX_TO_BIT(Physical),
+    MMUIDX_TO_BIT(Privileged),
+    MMUIDX_TO_BIT(PrivilegedVPTE),
+    MMUIDX_TO_BIT(PrivilegedWChk),
+    MMUIDX_TO_BIT(AltMode),
+    MMUIDX_TO_BIT(AltModeWChk),
+} AlphaMMUIdxBit;
+
+#undef MMUIDX_TO_BIT
+
+
+
+/* Bit definitions for PC */
+FIELD(PC, PAL_MODE, 0, 1)
+FIELD(PC, VALUE, 2, 62)
+
+/*
+ * Translation block flags.
+ *
+ * Unless otherwise noted, these bits are cached in env->hflags.
+ */
+FIELD(TBFLAG, IMMU_IDX, 0, 4)
+FIELD(TBFLAG, DMMU_IDX, 4, 4)
+FIELD(TBFLAG, FEN, 8, 1)
+FIELD(TBFLAG, SDE, 9, 1)
+FIELD(TBFLAG, HWE, 10, 1)
+FIELD(TBFLAG, PAL_MODE, 11, 1)
+
+/*
+ * Helpers for using the above.
+ */
+#define EX_TBFLAG(IN, WHICH)        FIELD_EX32(IN, TBFLAG, WHICH)
+#define DP_TBFLAG(DST, WHICH, VAL)  (DST = FIELD_DP32(DST, TBFLAG, WHICH, VAL))
+
+/**
+ * alpha_emulate_srom_reset: Emulate SROM CPU reset handling
+ * @cpu: CPU (which must have been freshly reset)
+ */
+void alpha_emulate_srom_reset(CPUState *cs);
+
+/**
+ * alpha_rebuild_hflags:
+ * Rebuild the cached TBFLAGS for arbitrary changed processor state.
+ */
+void alpha_rebuild_hflags(CPUAlphaState *env);
+
+/**
+ * alpha_is_pal:
+ * Returns true if we're in PAL mode.
+ */
+static inline bool alpha_is_pal(CPUAlphaState *env)
 {
-    uint64_t fpcr = 0;
-
-    fpcr |= (swcr & SWCR_STATUS_MASK) << 35;
-    fpcr |= (swcr & SWCR_MAP_DMZ) << 36;
-    fpcr |= (~swcr & (SWCR_TRAP_ENABLE_INV
-                      | SWCR_TRAP_ENABLE_DZE
-                      | SWCR_TRAP_ENABLE_OVF)) << 48;
-    fpcr |= (~swcr & (SWCR_TRAP_ENABLE_UNF
-                      | SWCR_TRAP_ENABLE_INE)) << 57;
-    fpcr |= (swcr & SWCR_MAP_UMZ ? FPCR_UNDZ | FPCR_UNFD : 0);
-    fpcr |= (~swcr & SWCR_TRAP_ENABLE_DNO) << 41;
-
-    return fpcr;
+    return env->pal_mode;
 }
 
-/* Copied from linux ieee_fpcr_to_swcr.  */
-static inline uint64_t alpha_ieee_fpcr_to_swcr(uint64_t fpcr)
+/**
+ * alpha_is_privileged:
+ * Returns true if we're in PAL mode or kernel mode.
+ */
+static inline bool alpha_is_privileged(AlphaMMUIdx mmu_idx)
 {
-    uint64_t swcr = 0;
-
-    swcr |= (fpcr >> 35) & SWCR_STATUS_MASK;
-    swcr |= (fpcr >> 36) & SWCR_MAP_DMZ;
-    swcr |= (~fpcr >> 48) & (SWCR_TRAP_ENABLE_INV
-                             | SWCR_TRAP_ENABLE_DZE
-                             | SWCR_TRAP_ENABLE_OVF);
-    swcr |= (~fpcr >> 57) & (SWCR_TRAP_ENABLE_UNF | SWCR_TRAP_ENABLE_INE);
-    swcr |= (fpcr >> 47) & SWCR_MAP_UMZ;
-    swcr |= (~fpcr >> 41) & SWCR_TRAP_ENABLE_DNO;
-
-    return swcr;
+    switch (mmu_idx) {
+    case AlphaMMUIdx_PAL:
+    case AlphaMMUIdx_Kernel:
+        return true;
+    default:
+        return false;
+    }
 }
-#endif /* CONFIG_USER_ONLY */
 
-#endif /* ALPHA_CPU_H */
+#endif /* _ALPHA_CPU_H */

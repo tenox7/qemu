@@ -86,3 +86,18 @@ config LPC_ICH9
     select ISA_BUS
     select ACPI_ICH9
     select MC146818RTC
+
+config M1543
+    bool
+    select ISA_BUS
+    select ISA_SUPERIO
+    select ACPI
+    select ACPI_SMBUS
+    select USB_UHCI
+    select IDE_PCI
+    select APM
+    select I8254
+    select I8257
+    select I8259
+    select MC146818RTC
+    select PCSPK

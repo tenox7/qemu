@@ -48,6 +48,7 @@
 #define KBD_CMD_RESET_ENABLE    0xF6    /* reset and enable scanning */
 #define KBD_CMD_RESET           0xFF    /* Reset */
 #define KBD_CMD_SET_MAKE_BREAK  0xFC    /* Set Make and Break mode */
+#define KBD_CMD_SET_ALL_KEYS    0xF8    /* Set All Keys Make/Break */
 #define KBD_CMD_SET_TYPEMATIC   0xFA    /* Set Typematic Make and Break mode */
 
 /* Keyboard Replies */
@@ -624,6 +625,7 @@ void ps2_write_keyboard(PS2KbdState *s, int val)
         case KBD_CMD_SET_LEDS:
         case KBD_CMD_SET_RATE:
         case KBD_CMD_SET_MAKE_BREAK:
+        case KBD_CMD_SET_ALL_KEYS:
             ps2->write_cmd = val;
             ps2_cqueue_1(ps2, KBD_REPLY_ACK);
             break;
@@ -656,6 +658,10 @@ void ps2_write_keyboard(PS2KbdState *s, int val)
         }
         break;
     case KBD_CMD_SET_MAKE_BREAK:
+        ps2_cqueue_1(ps2, KBD_REPLY_ACK);
+        ps2->write_cmd = -1;
+        break;
+    case KBD_CMD_SET_ALL_KEYS:
         ps2_cqueue_1(ps2, KBD_REPLY_ACK);
         ps2->write_cmd = -1;
         break;

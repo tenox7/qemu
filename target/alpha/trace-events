@@ -1,0 +1,5 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# cpu.c
+alpha_cpu_irq_set_exit(int cpu, int irq, int level, int pending, int request) "cpu=%d irq=%d level=%d -> pending=0x%x request=0x%x"
+alpha_cpu_irq_set_state(int cpu, const char *name, int level) "cpu=%d name=\"%s\" level=%d"

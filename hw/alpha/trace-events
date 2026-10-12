@@ -1,4 +1,58 @@
 # See docs/devel/tracing.rst for syntax documentation.
 
-# pci.c
-alpha_pci_iack_write(void) ""
+# rmc.c
+es40_rmc_write(uint32_t addr, uint32_t val) "addr=0x%x val=0x%x "
+es40_rmc_read(uint32_t addr, uint32_t val) "addr=0x%x val=0x%x "
+es40_rmc_command(const char *cmd, uint8_t len, uint16_t addr) "cmd=%s len=%u addr=0x%04x"
+es40_rmc_set_cpu_on(int cpuid, uint64_t entry) "cpuid=%d entry=0x%" PRIx64
+es40_rmc_display(const char *text) "text='%-16.16s'"
+
+# tsunami.c
+tsunami_pchip_set_irq(int index, int irq, int level) "index=%d irq=%d level=%d"
+tsunami_pchip_write(int index, const char *region, uint64_t addr, uint64_t val, unsigned len) "index=%u region=%s addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_pchip_read(int index, const char *region, uint64_t addr, uint64_t val, unsigned len) "index=%u region=%s addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_cchip_arbitration_clear(int cpuid) "cpuid=%d"
+tsunami_cchip_arbitration_try(int cpuid, const char *status) "cpuid=%d status=%s"
+tsunami_cchip_write(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_cchip_read(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_dchip_write(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_dchip_read(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_blackhole_write(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tsunami_device_irq_update(int irq, int level) "irq=%d level=%d"
+tsunami_timer_irq_update(int cpu, int level) "cpu=%d level=%d"
+tsunami_ipi_irq_update(int cpu, int level) "cpu=%d level=%d"
+tsunami_devsup_irq_set(int cpu) "cpu=%d"
+tsunami_devsup_irq_trigger(void) ""
+tsunami_iommu_translate_abort(const char *n, uint64_t iova) "%s translation abort on iova=0x%" PRIx64
+tsunami_iommu_translate_success(const char *n, uint64_t iova, uint64_t translated) "%s translation success iova=0x%" PRIx64 " translated=0x%" PRIx64
+tsunami_iommu_invalid_pte(uint64_t pte) "pte=0x%" PRIx64
+tsunami_iommu_get_pte(uint64_t pte_addr, uint64_t pte) "pte_addr=0x%" PRIx64 " pte=0x%" PRIx64
+
+# tigbus.c
+tigbus_unassigned_read(uint64_t addr, int size) "reading unassigned addr 0x%"PRIx64 " size %d"
+tigbus_unassigned_write(uint64_t addr, uint64_t val, int size) "writing unassigned addr 0x%"PRIx64 " value 0x%"PRIx64 " size %d"
+
+# tigcontrol.c
+tig_control_write(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+tig_control_read(uint64_t addr, uint64_t val, unsigned len) "addr=0x%"PRIx64 " val=0x%"PRIx64 " len=%u"
+
+# jensen.c
+jensen_rtc_read(uint64_t port, uint8_t index, uint8_t value) "port=0x%" PRIx64 " index=0x%02x value=0x%02x"
+jensen_rtc_write(uint64_t port, uint8_t index, uint8_t value) "port=0x%" PRIx64 " index=0x%02x value=0x%02x"
+
+# jensen-scsi.c
+jensen_aha_read(uint64_t reg, uint64_t value, unsigned size) "reg=0x%" PRIx64 " value=0x%" PRIx64 " size=%u"
+jensen_aha_write(uint64_t reg, uint64_t value, unsigned size) "reg=0x%" PRIx64 " value=0x%" PRIx64 " size=%u"
+jensen_aha_command(uint32_t ecb, unsigned target, unsigned command, unsigned cdb, uint32_t length) "ecb=0x%x target=%u command=0x%x cdb=0x%x length=%u"
+jensen_aha_complete(uint32_t ecb, unsigned host, unsigned target, uint32_t residual) "ecb=0x%x host=0x%x target=0x%x residual=%u"
+jensen_aha_ecb(uint32_t ecb, unsigned flags, unsigned flags2, uint32_t data, uint32_t status, uint64_t cdb) "ecb=0x%x flags=0x%x flags2=0x%x data=0x%x status=0x%x cdb=0x%" PRIx64
+jensen_inta_read(uint64_t addr, unsigned size, unsigned vector) "addr=0x%" PRIx64 " size=%u vector=0x%x"
+
+# jensen-s3.c
+jensen_s3_cr(unsigned index, unsigned value, bool write) "index=0x%02x value=0x%02x write=%d"
+jensen_s3_io(unsigned port, uint64_t value, unsigned size, bool write) "port=0x%04x value=0x%" PRIx64 " size=%u write=%d"
+jensen_s3_command(unsigned cmd, unsigned x, unsigned y, unsigned width, unsigned height) "cmd=0x%04x xy=%u,%u size=%u,%u"
+jensen_s3_state(unsigned cmd, unsigned sx, unsigned sy, unsigned dx, unsigned dy, unsigned width, unsigned height, unsigned pixel, unsigned mixes, unsigned format_mask) "cmd=0x%04x src=%u,%u dst=%u,%u size=%u,%u pix=0x%03x mixes=0x%08x format_mask=0x%08x"
+jensen_s3_dac(unsigned index, unsigned value) "index=%u value=0x%02x"
+jensen_s3_vga_io(unsigned port, unsigned value) "port=0x%04x value=0x%02x"
+jensen_s3_memory(unsigned addr, unsigned value, bool write) "addr=0x%06x value=0x%02x write=%d"

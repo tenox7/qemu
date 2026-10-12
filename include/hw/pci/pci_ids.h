@@ -174,6 +174,7 @@
 #define PCI_DEVICE_ID_NS_87560_USB       0x0012
 
 #define PCI_VENDOR_ID_DEC                0x1011
+#define PCI_DEVICE_ID_DEC_21154          0x0026
 #define PCI_DEVICE_ID_DEC_21143          0x0019
 
 #define PCI_VENDOR_ID_CIRRUS             0x1013
@@ -295,6 +296,12 @@
 #define PCI_VENDOR_ID_SYNOPSYS           0x16C3
 
 #define PCI_VENDOR_ID_NVIDIA             0x10de
+
+#define PCI_VENDOR_ID_AL                 0x10b9
+#define PCI_DEVICE_ID_AL_M1533           0x1533
+#define PCI_DEVICE_ID_AL_M5229           0x5229
+#define PCI_DEVICE_ID_AL_M5237           0x5237
+#define PCI_DEVICE_ID_AL_M7101           0x7101
 
 #define PCI_VENDOR_ID_ASPEED             0x1A03
 

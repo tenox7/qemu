@@ -124,6 +124,8 @@
 # @PciDeviceInfo:
 #     Information about a PCI device
 #
+# @hose: the hose that the device is located in
+#
 # @bus: the bus number of the device
 #
 # @slot: the slot the device is located in
@@ -147,7 +149,7 @@
 # Since: 0.14
 ##
 { 'struct': 'PciDeviceInfo',
-  'data': {'bus': 'int', 'slot': 'int', 'function': 'int',
+  'data': {'hose': 'int', 'bus': 'int', 'slot': 'int', 'function': 'int',
            'class_info': 'PciDeviceClass', 'id': 'PciDeviceId',
            '*irq': 'int', 'irq_pin': 'int', 'qdev_id': 'str',
            '*pci_bridge': 'PciBridgeInfo', 'regions': ['PciMemoryRegion'] }}

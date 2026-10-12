@@ -1,0 +1,457 @@
+#
+# This file is processed by scripts/decodetree.py
+#
+
+# Named fields.
+%off10          0:s10
+%off12          0:s12
+%off13          0:s13
+%off14          0:s14
+%off16          0:s16
+%off16hi        0:s16       !function=shl_16
+%off21          0:s21
+%func26         0:26
+%func16         0:16
+%func10_2_13_3  10:2 13:3
+%func13_3       13:3
+%func12_1       12:1
+%func11_2       11:2
+%lit13_8        13:8
+
+%ra             21:5
+%rb             16:5
+%rc             0:5
+
+# Named argument sets.
+&empty
+&mem            ra rb disp
+&opr            ra rb rc lit islit
+&fp             ra rb rc qual rm
+&br             ra disp
+&pal            func
+&hwldst         ra rb type len disp
+&hwret          rb disp
+&hwmxpr         ra rb iprn
+
+# Named instruction formats.
+@mem_func       ...... ..... .....    ................ \
+                &mem    ra=%ra rb=%rb disp=0
+@mem_disp       ...... ..... .....    ................ \
+                &mem    ra=%ra rb=%rb disp=%off16
+@mem_disp_hi    ...... ..... .....    ................ \
+                &mem    ra=%ra rb=%rb disp=%off16hi
+@operate        ...... ..... .....  0000 ....... ..... \
+                &opr    ra=%ra rb=%rb rc=%rc islit=0 lit=0
+@operate_lit    ...... ..... ........  1 ....... ..... \
+                &opr    ra=%ra rb=0 rc=%rc islit=1 lit=%lit13_8
+@float          ...... ..... ..... ... .. ...... ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=0 rm=0
+@float_qual     ...... ..... ..... ... .. ...... ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=%func13_3 rm=%func11_2
+@branch         ...... .....     ..................... \
+                &br     ra=%ra disp=%off21
+@pal            ......      .......................... \
+                &pal    func=%func26
+@hw_ldst_ev4    ...... ..... .....  ... . ............ \
+                &hwldst ra=%ra rb=%rb type=%func13_3 len=%func12_1 disp=%off12
+@hw_ldst_ev5    ...... ..... ..... ... . .. .......... \
+                &hwldst ra=%ra rb=%rb type=%func10_2_13_3 len=%func12_1 \
+                        disp=%off10
+@hw_ldst_ev6    ...... ..... .....  ... . ............ \
+                &hwldst ra=%ra rb=%rb type=%func13_3 len=%func12_1 disp=%off12
+@hw_rei         ...... ..... .....   -- .............. \
+                &hwret  rb=%rb disp=%off14
+@hw_ret         ...... ..... .....   --- ............. \
+                &hwret  rb=%rb disp=%off13
+@hw_mxpr        ...... ..... .....   ................ \
+                &hwmxpr ra=%ra rb=%rb iprn=%func16
+
+# Opcode set: PAL00   (0x00, Pcd)
+call_pal        000000 ..........................       @pal
+
+# Opcode set: LDA     (0x08, Mem)
+# Opcode set: LDAH    (0x09, Mem)
+# Opcode set: LDBU    (0x0a, Mem)
+# Opcode set: LDQ_U   (0x0b, Mem)
+# Opcode set: LDWU    (0x0c, Mem)
+# Opcode set: STW     (0x0d, Mem)
+# Opcode set: STB     (0x0e, Mem)
+# Opcode set: STQ_U   (0x0f, Mem)
+lda             001000 ..... ..... ................     @mem_disp
+ldah            001001 ..... ..... ................     @mem_disp_hi
+ldbu            001010 ..... ..... ................     @mem_disp
+ldq_u           001011 ..... ..... ................     @mem_disp
+ldwu            001100 ..... ..... ................     @mem_disp
+stw             001101 ..... ..... ................     @mem_disp
+stb             001110 ..... ..... ................     @mem_disp
+stq_u           001111 ..... ..... ................     @mem_disp
+
+# Opcode set: INTA    (0x10, Opr)
+addl            010000 ..... ........ . 0000000 .....   @operate_lit
+s4addl          010000 ..... ........ . 0000010 .....   @operate_lit
+subl            010000 ..... ........ . 0001001 .....   @operate_lit
+s4subl          010000 ..... ........ . 0001011 .....   @operate_lit
+cmpbge          010000 ..... ........ . 0001111 .....   @operate_lit
+s8addl          010000 ..... ........ . 0010010 .....   @operate_lit
+s8subl          010000 ..... ........ . 0011011 .....   @operate_lit
+cmpult          010000 ..... ........ . 0011101 .....   @operate_lit
+addq            010000 ..... ........ . 0100000 .....   @operate_lit
+s4addq          010000 ..... ........ . 0100010 .....   @operate_lit
+subq            010000 ..... ........ . 0101001 .....   @operate_lit
+s4subq          010000 ..... ........ . 0101011 .....   @operate_lit
+cmpeq           010000 ..... ........ . 0101101 .....   @operate_lit
+s8addq          010000 ..... ........ . 0110010 .....   @operate_lit
+s8subq          010000 ..... ........ . 0111011 .....   @operate_lit
+cmpule          010000 ..... ........ . 0111101 .....   @operate_lit
+addl_v          010000 ..... ........ . 1000000 .....   @operate_lit
+subl_v          010000 ..... ........ . 1001001 .....   @operate_lit
+cmplt           010000 ..... ........ . 1001101 .....   @operate_lit
+addq_v          010000 ..... ........ . 1100000 .....   @operate_lit
+subq_v          010000 ..... ........ . 1101001 .....   @operate_lit
+cmple           010000 ..... ........ . 1101101 .....   @operate_lit
+
+addl            010000 ..... ..... .... 0000000 .....   @operate
+s4addl          010000 ..... ..... .... 0000010 .....   @operate
+subl            010000 ..... ..... .... 0001001 .....   @operate
+s4subl          010000 ..... ..... .... 0001011 .....   @operate
+cmpbge          010000 ..... ..... .... 0001111 .....   @operate
+s8addl          010000 ..... ..... .... 0010010 .....   @operate
+s8subl          010000 ..... ..... .... 0011011 .....   @operate
+cmpult          010000 ..... ..... .... 0011101 .....   @operate
+addq            010000 ..... ..... .... 0100000 .....   @operate
+s4addq          010000 ..... ..... .... 0100010 .....   @operate
+subq            010000 ..... ..... .... 0101001 .....   @operate
+s4subq          010000 ..... ..... .... 0101011 .....   @operate
+cmpeq           010000 ..... ..... .... 0101101 .....   @operate
+s8addq          010000 ..... ..... .... 0110010 .....   @operate
+s8subq          010000 ..... ..... .... 0111011 .....   @operate
+cmpule          010000 ..... ..... .... 0111101 .....   @operate
+addl_v          010000 ..... ..... .... 1000000 .....   @operate
+subl_v          010000 ..... ..... .... 1001001 .....   @operate
+cmplt           010000 ..... ..... .... 1001101 .....   @operate
+addq_v          010000 ..... ..... .... 1100000 .....   @operate
+subq_v          010000 ..... ..... .... 1101001 .....   @operate
+cmple           010000 ..... ..... .... 1101101 .....   @operate
+
+# Opcode set: INTL    (0x11, Opr)
+and             010001 ..... ........ . 0000000 .....   @operate_lit
+bic             010001 ..... ........ . 0001000 .....   @operate_lit
+cmovlbs         010001 ..... ........ . 0010100 .....   @operate_lit
+cmovlbc         010001 ..... ........ . 0010110 .....   @operate_lit
+bis             010001 ..... ........ . 0100000 .....   @operate_lit
+cmoveq          010001 ..... ........ . 0100100 .....   @operate_lit
+cmovne          010001 ..... ........ . 0100110 .....   @operate_lit
+ornot           010001 ..... ........ . 0101000 .....   @operate_lit
+xor             010001 ..... ........ . 1000000 .....   @operate_lit
+cmovlt          010001 ..... ........ . 1000100 .....   @operate_lit
+cmovge          010001 ..... ........ . 1000110 .....   @operate_lit
+eqv             010001 ..... ........ . 1001000 .....   @operate_lit
+cmovle          010001 ..... ........ . 1100100 .....   @operate_lit
+cmovgt          010001 ..... ........ . 1100110 .....   @operate_lit
+amask           010001 ..... ........ . 1100001 .....   @operate_lit
+implver         010001 ..... ........ . 1101100 .....   @operate_lit
+
+and             010001 ..... ..... .... 0000000 .....   @operate
+bic             010001 ..... ..... .... 0001000 .....   @operate
+cmovlbs         010001 ..... ..... .... 0010100 .....   @operate
+cmovlbc         010001 ..... ..... .... 0010110 .....   @operate
+bis             010001 ..... ..... .... 0100000 .....   @operate
+cmoveq          010001 ..... ..... .... 0100100 .....   @operate
+cmovne          010001 ..... ..... .... 0100110 .....   @operate
+ornot           010001 ..... ..... .... 0101000 .....   @operate
+xor             010001 ..... ..... .... 1000000 .....   @operate
+cmovlt          010001 ..... ..... .... 1000100 .....   @operate
+cmovge          010001 ..... ..... .... 1000110 .....   @operate
+eqv             010001 ..... ..... .... 1001000 .....   @operate
+cmovle          010001 ..... ..... .... 1100100 .....   @operate
+cmovgt          010001 ..... ..... .... 1100110 .....   @operate
+amask           010001 ..... ..... .... 1100001 .....   @operate
+
+# Opcode set: INTS    (0x12, Opr)
+mskbl           010010 ..... ..... .... 0000010 .....   @operate
+extbl           010010 ..... ..... .... 0000110 .....   @operate
+insbl           010010 ..... ..... .... 0001011 .....   @operate
+mskwl           010010 ..... ..... .... 0010010 .....   @operate
+extwl           010010 ..... ..... .... 0010110 .....   @operate
+inswl           010010 ..... ..... .... 0011011 .....   @operate
+mskll           010010 ..... ..... .... 0100010 .....   @operate
+extll           010010 ..... ..... .... 0100110 .....   @operate
+insll           010010 ..... ..... .... 0101011 .....   @operate
+zap             010010 ..... ..... .... 0110000 .....   @operate
+zapnot          010010 ..... ..... .... 0110001 .....   @operate
+mskql           010010 ..... ..... .... 0110010 .....   @operate
+srl             010010 ..... ..... .... 0110100 .....   @operate
+extql           010010 ..... ..... .... 0110110 .....   @operate
+sll             010010 ..... ..... .... 0111001 .....   @operate
+insql           010010 ..... ..... .... 0111011 .....   @operate
+sra             010010 ..... ..... .... 0111100 .....   @operate
+mskwh           010010 ..... ..... .... 1010010 .....   @operate
+inswh           010010 ..... ..... .... 1010111 .....   @operate
+extwh           010010 ..... ..... .... 1011010 .....   @operate
+msklh           010010 ..... ..... .... 1100010 .....   @operate
+inslh           010010 ..... ..... .... 1100111 .....   @operate
+extlh           010010 ..... ..... .... 1101010 .....   @operate
+mskqh           010010 ..... ..... .... 1110010 .....   @operate
+insqh           010010 ..... ..... .... 1110111 .....   @operate
+extqh           010010 ..... ..... .... 1111010 .....   @operate
+
+mskbl           010010 ..... ........ . 0000010 .....   @operate_lit
+extbl           010010 ..... ........ . 0000110 .....   @operate_lit
+insbl           010010 ..... ........ . 0001011 .....   @operate_lit
+mskwl           010010 ..... ........ . 0010010 .....   @operate_lit
+extwl           010010 ..... ........ . 0010110 .....   @operate_lit
+inswl           010010 ..... ........ . 0011011 .....   @operate_lit
+mskll           010010 ..... ........ . 0100010 .....   @operate_lit
+extll           010010 ..... ........ . 0100110 .....   @operate_lit
+insll           010010 ..... ........ . 0101011 .....   @operate_lit
+zap             010010 ..... ........ . 0110000 .....   @operate_lit
+zapnot          010010 ..... ........ . 0110001 .....   @operate_lit
+mskql           010010 ..... ........ . 0110010 .....   @operate_lit
+srl             010010 ..... ........ . 0110100 .....   @operate_lit
+extql           010010 ..... ........ . 0110110 .....   @operate_lit
+sll             010010 ..... ........ . 0111001 .....   @operate_lit
+insql           010010 ..... ........ . 0111011 .....   @operate_lit
+sra             010010 ..... ........ . 0111100 .....   @operate_lit
+mskwh           010010 ..... ........ . 1010010 .....   @operate_lit
+inswh           010010 ..... ........ . 1010111 .....   @operate_lit
+extwh           010010 ..... ........ . 1011010 .....   @operate_lit
+msklh           010010 ..... ........ . 1100010 .....   @operate_lit
+inslh           010010 ..... ........ . 1100111 .....   @operate_lit
+extlh           010010 ..... ........ . 1101010 .....   @operate_lit
+mskqh           010010 ..... ........ . 1110010 .....   @operate_lit
+insqh           010010 ..... ........ . 1110111 .....   @operate_lit
+extqh           010010 ..... ........ . 1111010 .....   @operate_lit
+
+# Opcode set: INTM    (0x13, Opr)
+mull            010011 ..... ..... .... 0000000 .....   @operate
+mulq            010011 ..... ..... .... 0100000 .....   @operate
+umulh           010011 ..... ..... .... 0110000 .....   @operate
+mull_v          010011 ..... ..... .... 1000000 .....   @operate
+mulq_v          010011 ..... ..... .... 1100000 .....   @operate
+
+mull            010011 ..... ........ . 0000000 .....   @operate_lit
+mulq            010011 ..... ........ . 0100000 .....   @operate_lit
+umulh           010011 ..... ........ . 0110000 .....   @operate_lit
+mull_v          010011 ..... ........ . 1000000 .....   @operate_lit
+mulq_v          010011 ..... ........ . 1100000 .....   @operate_lit
+
+# Opcode set: ITFP    (0x14, FP)
+itofs           010100 ..... .....  00000000100 .....   @float
+sqrtf           010100 ..... .....  .....001010 .....   @float_qual
+sqrts           010100 ..... .....  .....001011 .....   @float_qual
+itoff           010100 ..... .....  00000010100 .....   @float
+itoft           010100 ..... .....  00000100100 .....   @float
+sqrtg           010100 ..... .....  .....101010 .....   @float_qual
+sqrtt           010100 ..... .....  .....101011 .....   @float_qual
+
+# Opcode set: FLTV    (0x15, FP (VAX))
+addf            010101 ..... .....  .....000000 .....   @float_qual
+subf            010101 ..... .....  .....000001 .....   @float_qual
+mulf            010101 ..... .....  .....000010 .....   @float_qual
+divf            010101 ..... .....  .....000011 .....   @float_qual
+cvtdg           010101 ..... .....  .....011110 .....   @float_qual
+addg            010101 ..... .....  .....100000 .....   @float_qual
+subg            010101 ..... .....  .....100001 .....   @float_qual
+mulg            010101 ..... .....  .....100010 .....   @float_qual
+divg            010101 ..... .....  .....100011 .....   @float_qual
+cmpgeq          010101 ..... .....  .....100101 .....   @float_qual
+cmpglt          010101 ..... .....  .....100110 .....   @float_qual
+cmpgle          010101 ..... .....  .....100111 .....   @float_qual
+cvtgf           010101 ..... .....  .....101100 .....   @float_qual
+cvtgd           010101 ..... .....  .....101101 .....   @float_qual
+cvtgq           010101 ..... .....  .....101111 .....   @float_qual
+cvtqf           010101 ..... .....  .....111100 .....   @float_qual
+cvtqg           010101 ..... .....  .....111110 .....   @float_qual
+
+# Opcode set: FLTI    (0x16, FP (IEEE))
+adds            010110 ..... .....  .....000000 .....   @float_qual
+subs            010110 ..... .....  .....000001 .....   @float_qual
+muls            010110 ..... .....  .....000010 .....   @float_qual
+divs            010110 ..... .....  .....000011 .....   @float_qual
+addt            010110 ..... .....  .....100000 .....   @float_qual
+subt            010110 ..... .....  .....100001 .....   @float_qual
+mult            010110 ..... .....  .....100010 .....   @float_qual
+divt            010110 ..... .....  .....100011 .....   @float_qual
+cmptun          010110 ..... .....  .....100100 .....   @float_qual
+cmpteq          010110 ..... .....  .....100101 .....   @float_qual
+cmptlt          010110 ..... .....  .....100110 .....   @float_qual
+cmptle          010110 ..... .....  .....100111 .....   @float_qual
+cvttq           010110 ..... .....  .....101111 .....   @float_qual
+cvtqs           010110 ..... .....  .....111100 .....   @float_qual
+cvtqt           010110 ..... .....  .....111110 .....   @float_qual
+{
+  cvtst         010110 ..... .....  01010101100 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=2 rm=2
+  cvtst         010110 ..... .....  11010101100 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=6 rm=2
+  cvtts         010110 ..... .....  .....101100 .....   @float_qual
+}
+
+# Opcode set: FLTL    (0x17, FP)
+cvtlq           010111 ..... .....  00000010000 .....   @float
+cpys            010111 ..... .....  00000100000 .....   @float
+cpysn           010111 ..... .....  00000100001 .....   @float
+cpyse           010111 ..... .....  00000100010 .....   @float
+mt_fpcr         010111 ..... .....  00000100100 .....   @float
+mf_fpcr         010111 ..... .....  00000100101 .....   @float
+fcmoveq         010111 ..... .....  00000101010 .....   @float
+fcmovne         010111 ..... .....  00000101011 .....   @float
+fcmovlt         010111 ..... .....  00000101100 .....   @float
+fcmovge         010111 ..... .....  00000101101 .....   @float
+fcmovle         010111 ..... .....  00000101110 .....   @float
+fcmovgt         010111 ..... .....  00000101111 .....   @float
+{
+  # Undocumented encoding used by Windows NT; see trans_cvtql_nt.
+  cvtql_nt      010111 ..... .....  01100110000 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=1 rm=0
+  cvtql         010111 ..... .....  10100110000 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=5 rm=0
+  cvtql         010111 ..... .....  00100110000 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=1 rm=0
+  cvtql         010111 ..... .....  00000110000 ..... \
+                &fp     ra=%ra rb=%rb rc=%rc qual=0 rm=0
+}
+
+# Opcode set: MISC    (0x18, Mfc)
+trapb           011000 ..... ..... 0000000000000000     @mem_func
+excb            011000 ..... ..... 0000010000000000     @mem_func
+mb              011000 ..... ..... 0100000000000000     @mem_func
+wmb             011000 ..... ..... 0100010000000000     @mem_func
+fetch           011000 ..... ..... 1000000000000000     @mem_func
+fetch_m         011000 ..... ..... 1010000000000000     @mem_func
+rpcc            011000 ..... ..... 1100000000000000     @mem_func
+rc              011000 ..... ..... 1110000000000000     @mem_func
+ecb             011000 ..... ..... 1110100000000000     @mem_func
+rs              011000 ..... ..... 1111000000000000     @mem_func
+wh64            011000 ..... ..... 1111100000000000     @mem_func
+wh64en          011000 ..... ..... 1111110000000000     @mem_func
+
+# Opcode set: HW_MFPR (0x19, Reserved for PALcode)
+hw_mfpr         011001 ..... ..... ................     @hw_mxpr
+
+# Opcode set: JMP     (0x1a, Mbr)
+jmp             011010 ..... ..... ................     @mem_disp
+
+# Opcode set: HW_LD   (0x1b, Reserved for PALcode)
+{
+  hw_ld_ev6     011011 ..... ..... ... .  ............  @hw_ldst_ev6
+  hw_ld_ev5     011011 ..... ..... ... . .. ..........  @hw_ldst_ev5
+  hw_ld_ev4     011011 ..... ..... ... .  ............  @hw_ldst_ev4
+}
+
+# Opcode set: FPTI    (0x1c, FP & Opr)
+sextb           011100 ..... ..... .... 0000000 .....   @operate
+sextw           011100 ..... ..... .... 0000001 .....   @operate
+ctpop           011100 ..... ..... .... 0110000 .....   @operate
+perr            011100 ..... ..... .... 0110001 .....   @operate
+ctlz            011100 ..... ..... .... 0110010 .....   @operate
+cttz            011100 ..... ..... .... 0110011 .....   @operate
+unpkbw          011100 ..... ..... .... 0110100 .....   @operate
+unpkbl          011100 ..... ..... .... 0110101 .....   @operate
+pkwb            011100 ..... ..... .... 0110110 .....   @operate
+pklb            011100 ..... ..... .... 0110111 .....   @operate
+minsb8          011100 ..... ..... .... 0111000 .....   @operate
+minsw4          011100 ..... ..... .... 0111001 .....   @operate
+minub8          011100 ..... ..... .... 0111010 .....   @operate
+minuw4          011100 ..... ..... .... 0111011 .....   @operate
+maxub8          011100 ..... ..... .... 0111100 .....   @operate
+maxuw4          011100 ..... ..... .... 0111101 .....   @operate
+maxsb8          011100 ..... ..... .... 0111110 .....   @operate
+maxsw4          011100 ..... ..... .... 0111111 .....   @operate
+ftoit           011100 ..... ..... .... 1110000 .....   @operate
+ftois           011100 ..... ..... .... 1111000 .....   @operate
+
+sextb           011100 ..... ........ . 0000000 .....   @operate_lit
+sextw           011100 ..... ........ . 0000001 .....   @operate_lit
+minsb8          011100 ..... ........ . 0111000 .....   @operate_lit
+minsw4          011100 ..... ........ . 0111001 .....   @operate_lit
+minub8          011100 ..... ........ . 0111010 .....   @operate_lit
+minuw4          011100 ..... ........ . 0111011 .....   @operate_lit
+maxub8          011100 ..... ........ . 0111100 .....   @operate_lit
+maxuw4          011100 ..... ........ . 0111101 .....   @operate_lit
+maxsb8          011100 ..... ........ . 0111110 .....   @operate_lit
+maxsw4          011100 ..... ........ . 0111111 .....   @operate_lit
+ftoit           011100 ..... ........ . 1110000 .....   @operate_lit
+ftois           011100 ..... ........ . 1111000 .....   @operate_lit
+
+# Opcode set: HW_MTPR (0x1d, Reserved for PALcode)
+hw_mtpr         011101 ..... ..... ................    @hw_mxpr
+
+# Opcode set: HW_REI  (0x1e, Reserved for PALcode)
+{
+  hw_ret        011110 11111 ..... --- .............    @hw_ret
+  hw_rei        011110 11111 ..... -- ..............    @hw_rei
+}
+
+# Opcode set: HW_ST   (0x1f, Reserved for PALcode)
+{
+  hw_st_ev6     011111 ..... ..... ... .  ............  @hw_ldst_ev6
+  hw_st_ev5     011111 ..... ..... ... . .. ..........  @hw_ldst_ev5
+  hw_st_ev4     011111 ..... ..... ... .  ............  @hw_ldst_ev4
+}
+
+# Opcode set: LDF     (0x20, Mem)
+# Opcode set: LDG     (0x21, Mem)
+# Opcode set: LDS     (0x22, Mem)
+# Opcode set: LDT     (0x23, Mem)
+# Opcode set: STF     (0x24, Mem)
+# Opcode set: STG     (0x25, Mem)
+# Opcode set: STS     (0x26, Mem)
+# Opcode set: STT     (0x27, Mem)
+# Opcode set: LDL     (0x28, Mem)
+# Opcode set: LDQ     (0x29, Mem)
+# Opcode set: LDL_L   (0x2a, Mem)
+# Opcode set: LDQ_L   (0x2b, Mem)
+# Opcode set: STL     (0x2c, Mem)
+# Opcode set: STQ     (0x2d, Mem)
+# Opcode set: STL_C   (0x2e, Mem)
+# Opcode set: STQ_C   (0x2f, Mem)
+ldf             100000 ..... ..... ................     @mem_disp
+ldg             100001 ..... ..... ................     @mem_disp
+lds             100010 ..... ..... ................     @mem_disp
+ldt             100011 ..... ..... ................     @mem_disp
+stf             100100 ..... ..... ................     @mem_disp
+stg             100101 ..... ..... ................     @mem_disp
+sts             100110 ..... ..... ................     @mem_disp
+stt             100111 ..... ..... ................     @mem_disp
+ldl             101000 ..... ..... ................     @mem_disp
+ldq             101001 ..... ..... ................     @mem_disp
+ldl_l           101010 ..... ..... ................     @mem_disp
+ldq_l           101011 ..... ..... ................     @mem_disp
+stl             101100 ..... ..... ................     @mem_disp
+stq             101101 ..... ..... ................     @mem_disp
+stl_c           101110 ..... ..... ................     @mem_disp
+stq_c           101111 ..... ..... ................     @mem_disp
+
+# Opcode set: BR      (0x30, Bra)
+# Opcode set: FBEQ    (0x31, Bra (FP))
+# Opcode set: FBLT    (0x32, Bra (FP))
+# Opcode set: FBLE    (0x33, Bra (FP))
+# Opcode set: BSR     (0x34, Mbr)
+# Opcode set: FBNE    (0x35, Bra (FP))
+# Opcode set: FBGE    (0x36, Bra (FP))
+# Opcode set: FBGT    (0x37, Bra (FP))
+# Opcode set: BLBC    (0x38, Bra)
+# Opcode set: BEQ     (0x39, Bra)
+# Opcode set: BLT     (0x3a, Bra)
+# Opcode set: BLE     (0x3b, Bra)
+# Opcode set: BLBS    (0x3c, Bra)
+# Opcode set: BNE     (0x3d, Bra)
+# Opcode set: BGE     (0x3e, Bra)
+# Opcode set: BGT     (0x3f, Bra)
+br              110000 ..... .....................      @branch
+fbeq            110001 ..... .....................      @branch
+fblt            110010 ..... .....................      @branch
+fble            110011 ..... .....................      @branch
+bsr             110100 ..... .....................      @branch
+fbne            110101 ..... .....................      @branch
+fbge            110110 ..... .....................      @branch
+fbgt            110111 ..... .....................      @branch
+blbc            111000 ..... .....................      @branch
+beq             111001 ..... .....................      @branch
+blt             111010 ..... .....................      @branch
+ble             111011 ..... .....................      @branch
+blbs            111100 ..... .....................      @branch
+bne             111101 ..... .....................      @branch
+bge             111110 ..... .....................      @branch
+bgt             111111 ..... .....................      @branch
