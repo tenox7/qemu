@@ -1427,7 +1427,7 @@ static void p9100_reg_write(void *opaque, hwaddr addr, uint64_t val,
     case 0x4000:
         /*
          * Seen only on OS/2 PPC edition, might not be correct?
-		 */
+         */
         p9100_pixel8(s, val);
         break;
     case P9100_PIXEL8_CMD:
