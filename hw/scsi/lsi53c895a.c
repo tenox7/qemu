@@ -266,6 +266,8 @@ struct LSIState {
      */
     uint8_t sist0_stacked;
     uint8_t sist1_stacked;
+    /* SIP stays set until both SIST0 and SIST1 have been read */
+    uint8_t sist_unread;
     uint8_t sien0;
     uint8_t sien1;
     uint8_t mbox0;
@@ -383,6 +385,7 @@ static void lsi_soft_reset(LSIState *s)
     s->sist1 = 0;
     s->sist0_stacked = 0;
     s->sist1_stacked = 0;
+    s->sist_unread = 0;
     s->sien0 = 0;
     s->sien1 = 0;
     s->mbox0 = 0;
@@ -526,7 +529,7 @@ static void lsi_update_irq(LSIState *s)
         s->istat0 &= ~LSI_ISTAT0_DIP;
     }
 
-    if (s->sist0 || s->sist1) {
+    if (s->sist0 || s->sist1 || s->sist_unread) {
         if ((s->sist0 & s->sien0) || (s->sist1 & s->sien1))
             level = 1;
         s->istat0 |= LSI_ISTAT0_SIP;
@@ -567,6 +570,7 @@ static void lsi_script_scsi_interrupt(LSIState *s, int stat0, int stat1)
     }
     s->sist0 |= stat0;
     s->sist1 |= stat1;
+    s->sist_unread = 3;
     /* Stop processor on fatal or unmasked interrupt.  As a special hack
        we don't stop processing when raising STO.  Instead continue
        execution and stop at the next insn that accesses the SCSI bus.  */
@@ -1876,12 +1880,14 @@ static uint8_t lsi_reg_readb(LSIState *s, int offset)
         ret = s->sist0;
         s->sist0 = s->sist0_stacked;
         s->sist0_stacked = 0;
+        s->sist_unread &= ~1;
         lsi_update_irq(s);
         break;
     case 0x43: /* SIST1 */
         ret = s->sist1;
         s->sist1 = s->sist1_stacked;
         s->sist1_stacked = 0;
+        s->sist_unread &= ~2;
         lsi_update_irq(s);
         break;
     case 0x46: /* MACNTL */
@@ -2333,7 +2339,7 @@ static int lsi_post_load(void *opaque, int version_id)
 
 static const VMStateDescription vmstate_lsi_scsi = {
     .name = "lsiscsi",
-    .version_id = 2,
+    .version_id = 3,
     .minimum_version_id = 0,
     .pre_save = lsi_pre_save,
     .post_load = lsi_post_load,
@@ -2361,6 +2367,7 @@ static const VMStateDescription vmstate_lsi_scsi = {
         VMSTATE_UINT8_V(sist0_stacked, LSIState, 2),
         VMSTATE_UINT8_V(sist1_stacked, LSIState, 2),
         VMSTATE_BOOL_V(sto_pending, LSIState, 2),
+        VMSTATE_UINT8_V(sist_unread, LSIState, 3),
         VMSTATE_UINT8(sien0, LSIState),
         VMSTATE_UINT8(sien1, LSIState),
         VMSTATE_UINT8(mbox0, LSIState),
