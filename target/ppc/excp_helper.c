@@ -544,8 +544,8 @@ static void powerpc_excp_6xx(PowerPCCPU *cpu, int excp)
     /* new srr1 value excluding must-be-zero bits */
     msr = env->msr & ~0x783f0000ULL;
 
-    /* new interrupt handler msr preserves ME unless explicitly overridden */
-    new_msr = env->msr & ((target_ulong)1 << MSR_ME);
+    /* new interrupt handler msr preserves ME and ILE */
+    new_msr = env->msr & ((1ULL << MSR_ME) | (1ULL << MSR_ILE));
 
     /* HV emu assistance interrupt only exists on server arch 2.05 or later */
     if (excp == POWERPC_EXCP_HV_EMU) {
@@ -690,8 +690,8 @@ static void powerpc_excp_7xx(PowerPCCPU *cpu, int excp)
     /* new srr1 value excluding must-be-zero bits */
     msr = env->msr & ~0x783f0000ULL;
 
-    /* new interrupt handler msr preserves ME unless explicitly overridden */
-    new_msr = env->msr & ((target_ulong)1 << MSR_ME);
+    /* new interrupt handler msr preserves ME and ILE */
+    new_msr = env->msr & ((1ULL << MSR_ME) | (1ULL << MSR_ILE));
 
     /* HV emu assistance interrupt only exists on server arch 2.05 or later */
     if (excp == POWERPC_EXCP_HV_EMU) {
@@ -844,8 +844,8 @@ static void powerpc_excp_74xx(PowerPCCPU *cpu, int excp)
     /* new srr1 value excluding must-be-zero bits */
     msr = env->msr & ~0x783f0000ULL;
 
-    /* new interrupt handler msr preserves ME unless explicitly overridden */
-    new_msr = env->msr & ((target_ulong)1 << MSR_ME);
+    /* new interrupt handler msr preserves ME and ILE */
+    new_msr = env->msr & ((1ULL << MSR_ME) | (1ULL << MSR_ILE));
 
     /* HV emu assistance interrupt only exists on server arch 2.05 or later */
     if (excp == POWERPC_EXCP_HV_EMU) {

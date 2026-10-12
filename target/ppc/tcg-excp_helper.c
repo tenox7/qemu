@@ -530,7 +530,11 @@ static void do_rfi(CPUPPCState *env, target_ulong nip, target_ulong msr)
 
 void helper_rfi(CPUPPCState *env)
 {
-    do_rfi(env, env->spr[SPR_SRR0], env->spr[SPR_SRR1] & 0xfffffffful);
+    /* SRR1 does not hold MSR[ILE], rfi leaves it unchanged */
+    target_ulong ile = env->msr & (1ULL << MSR_ILE);
+    target_ulong msr = env->spr[SPR_SRR1] & 0xfffffffful & ~(1ULL << MSR_ILE);
+
+    do_rfi(env, env->spr[SPR_SRR0], msr | ile);
 }
 
 #ifdef TARGET_PPC64
