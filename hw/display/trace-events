@@ -226,3 +226,9 @@ apple_gfx_iosfc_unmap_memory(void *a, void *b, void *c, void *d, void *e, void *
 apple_gfx_iosfc_unmap_memory_region(void* mem, void *region) "unmapping @ %p from memory region %p"
 apple_gfx_iosfc_raise_irq(uint32_t vector) "vector=0x%x"
 
+# s3_trio.c
+s3_vga_read(uint32_t port, uint8_t idx, uint32_t val) "port 0x%x idx 0x%02x val 0x%x"
+s3_vga_write(uint32_t port, uint8_t idx, uint32_t val) "port 0x%x idx 0x%02x val 0x%x"
+s3_ge_read(uint32_t reg, uint32_t val, unsigned size) "reg 0x%x val 0x%x size %u"
+s3_ge_write(uint32_t reg, uint32_t val, unsigned size) "reg 0x%x val 0x%x size %u"
+s3_cmd(uint16_t cmd, int x, int y, int dx, int dy, int w, int h, unsigned bpp, unsigned pitch) "cmd 0x%04x src %d,%d dst %d,%d size %dx%d bpp %u pitch %u"
