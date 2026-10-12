@@ -363,9 +363,6 @@ static void ibm_40p_init(MachineState *machine)
 
     /* RTC */
     isa_dev = isa_new(TYPE_MC146818_RTC);
-    dev = DEVICE(isa_dev);
-    qdev_prop_set_int32(dev, "base_year", 2000);
-    qdev_prop_set_bit(dev, "century-byte", false);
     isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
     /* initialize CMOS checksums */
@@ -504,6 +501,8 @@ static void ibm_40p_machine_init(MachineClass *mc)
 {
     static GlobalProperty compat[] = {
         { TYPE_ISA_FDC, "sra", "on" },
+        { TYPE_MC146818_RTC, "base_year", "2000" },
+        { TYPE_MC146818_RTC, "century-byte", "off" },
     };
 
     mc->desc = "IBM RS/6000 7020 (40p)",
