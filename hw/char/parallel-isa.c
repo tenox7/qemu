@@ -48,10 +48,18 @@ void isa_parallel_set_iobase(ISADevice *parallel, hwaddr iobase)
 
     parallel->ioport_id = iobase;
     s->iobase = iobase;
+    s->state.base = iobase;
     portio_list_set_address(&s->portio_list, s->iobase);
+    portio_list_set_address(&s->portio_list_ext, s->iobase);
+    isa_parallel_set_enabled(parallel, s->enabled);
 }
 
 void isa_parallel_set_enabled(ISADevice *parallel, bool enabled)
 {
-    portio_list_set_enabled(&ISA_PARALLEL(parallel)->portio_list, enabled);
+    ISAParallelState *s = ISA_PARALLEL(parallel);
+
+    s->enabled = enabled;
+    portio_list_set_enabled(&s->portio_list, enabled);
+    portio_list_set_enabled(&s->portio_list_ext,
+                            enabled && s->iobase != 0x3bc);
 }

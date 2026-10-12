@@ -27,6 +27,8 @@ struct ISAParallelState {
     uint32_t isairq;
     ParallelState state;
     PortioList portio_list;
+    PortioList portio_list_ext;
+    bool enabled;
 };
 
 void isa_parallel_set_iobase(ISADevice *parallel, hwaddr iobase);

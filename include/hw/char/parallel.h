@@ -19,6 +19,7 @@ typedef struct ParallelState {
     int hw_driver;
     int epp_timeout;
     uint32_t last_read_offset; /* For debugging */
+    uint32_t base;
     /* Memory-mapped interface */
     int it_shift;
 } ParallelState;
