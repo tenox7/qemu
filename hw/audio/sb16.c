@@ -119,6 +119,24 @@ struct SB16State {
 
 static void SB_audio_callback (void *opaque, int free);
 
+static void sb16_irq_update(SB16State *s)
+{
+    qemu_set_irq(s->pic, (s->mixer_regs[0x82] & 7) != 0);
+}
+
+/* An optional MPU-401 drives mixer IRQ status bit 2 on the shared card IRQ. */
+static void sb16_midi_irq(void *opaque, int n, int level)
+{
+    SB16State *s = SB16(opaque);
+    if (level) {
+        s->mixer_regs[0x82] |= 4;
+    } else {
+        s->mixer_regs[0x82] &= ~4;
+    }
+    sb16_irq_update(s);
+}
+
+
 static int magic_of_irq (int irq)
 {
     switch (irq) {
@@ -197,7 +215,8 @@ static void aux_timer (void *opaque)
 {
     SB16State *s = opaque;
     s->can_write = 1;
-    qemu_irq_raise (s->pic);
+    s->mixer_regs[0x82] |= 1;
+    sb16_irq_update(s);
 }
 
 #define DMA8_AUTO 1
@@ -628,7 +647,7 @@ static void command (SB16State *s, uint8_t cmd)
         case 0xf3:
             dsp_out_data (s, 0xaa);
             s->mixer_regs[0x82] |= (cmd == 0xf2) ? 1 : 2;
-            qemu_irq_raise (s->pic);
+            sb16_irq_update(s);
             break;
 
         case 0xf9:
@@ -800,7 +819,7 @@ static void complete (SB16State *s)
                 bytes = samples << s->fmt_stereo << (s->fmt_bits == 16);
                 ticks = muldiv64(bytes, NANOSECONDS_PER_SECOND, freq);
                 if (ticks < NANOSECONDS_PER_SECOND / 1024) {
-                    qemu_irq_raise (s->pic);
+                    aux_timer(s);
                 }
                 else {
                     if (s->aux_ts) {
@@ -894,13 +913,16 @@ static void legacy_reset (SB16State *s)
 
 static void reset (SB16State *s)
 {
-    qemu_irq_lower (s->pic);
-    if (s->dma_auto) {
-        qemu_irq_raise (s->pic);
-        qemu_irq_lower (s->pic);
+    if (!(s->mixer_regs[0x82] & 4)) {
+        qemu_irq_lower(s->pic);
+        if (s->dma_auto) {
+            qemu_irq_raise(s->pic);
+            qemu_irq_lower(s->pic);
+        }
     }
 
-    s->mixer_regs[0x82] = 0;
+    s->mixer_regs[0x82] &= 4;
+    sb16_irq_update(s);
     s->dma_auto = 0;
     s->in_index = 0;
     s->out_data_len = 0;
@@ -1037,7 +1059,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 1) {
             ack = 1;
             s->mixer_regs[0x82] &= ~1;
-            qemu_irq_lower (s->pic);
+            sb16_irq_update(s);
         }
         break;
 
@@ -1046,7 +1068,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 2) {
             ack = 1;
             s->mixer_regs[0x82] &= ~2;
-            qemu_irq_lower (s->pic);
+            sb16_irq_update(s);
         }
         break;
 
@@ -1256,7 +1278,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 
     if (s->left_till_irq <= 0) {
         s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
-        qemu_irq_raise (s->pic);
+        sb16_irq_update(s);
         if (s->dma_auto == 0) {
             control (s, 0);
             speaker (s, 0);
@@ -1399,6 +1421,7 @@ static void sb16_initfn (Object *obj)
     SB16State *s = SB16 (obj);
 
     s->cmd = -1;
+    qdev_init_gpio_in_named(DEVICE(s), sb16_midi_irq, "midi-irq", 1);
 }
 
 static void sb16_realizefn (DeviceState *dev, Error **errp)

@@ -56,3 +56,6 @@ jensen_s3_state(unsigned cmd, unsigned sx, unsigned sy, unsigned dx, unsigned dy
 jensen_s3_dac(unsigned index, unsigned value) "index=%u value=0x%02x"
 jensen_s3_vga_io(unsigned port, unsigned value) "port=0x%04x value=0x%02x"
 jensen_s3_memory(unsigned addr, unsigned value, bool write) "addr=0x%06x value=0x%02x write=%d"
+
+jensen_mpu_read(uint64_t addr, unsigned value, uint64_t ra) "addr=0x%" PRIx64 " value=0x%02x ra=0x%" PRIx64
+jensen_mpu_write(uint64_t addr, unsigned value, uint64_t ra) "addr=0x%" PRIx64 " value=0x%02x ra=0x%" PRIx64
