@@ -51,8 +51,6 @@ struct PrepSystemIoState {
     uint8_t system_control; /* 0x081c */
     uint8_t iomap_type; /* 0x0850 */
     uint8_t ibm_planar_id; /* 0x0852 */
-    qemu_irq softreset_irq;
-    PowerPCCPU *cpu;
     PortioList portio;
 };
 
@@ -66,24 +64,18 @@ enum {
 static void prep_port0092_write(void *opaque, uint32_t addr, uint32_t val)
 {
     PrepSystemIoState *s = opaque;
+    uint8_t oldval = s->sreset;
 
     trace_prep_systemio_write(addr, val);
 
-    /*
-     * The LE bit swaps byte lanes in the bridge. Together with the CPU's
-     * address munging that gives true little-endian, which is what MSR[LE]
-     * already does in QEMU, except for hash table walks.
-     *
-     * Clearing it only happens on the way back to the big-endian firmware,
-     * through code that relies on the CPU's munged view while the bridge no
-     * longer swaps. QEMU has no munged mode, so reset the machine instead.
-     */
-    if ((s->sreset & PORT0092_LE_MODE) && !(val & PORT0092_LE_MODE)) {
+    s->sreset = val & (PORT0092_SOFTRESET | PORT0092_LE_MODE);
+
+    ppc_set_platform_le(&POWERPC_CPU(first_cpu)->env,
+                        !!(s->sreset & PORT0092_LE_MODE));
+
+    if ((s->sreset & PORT0092_SOFTRESET) && !(oldval & PORT0092_SOFTRESET)) {
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
     }
-    s->sreset = val & (PORT0092_SOFTRESET | PORT0092_LE_MODE);
-    s->cpu->env.hpte_swap = val & PORT0092_LE_MODE;
-    qemu_set_irq(s->softreset_irq, val & PORT0092_SOFTRESET);
 }
 
 static uint32_t prep_port0092_read(void *opaque, uint32_t addr)
@@ -219,6 +211,8 @@ static void prep_port0850_write(void *opaque, uint32_t addr, uint32_t val)
 static const MemoryRegionPortio ppc_io800_port_list[] = {
     { 0x092, 1, 1, .read = prep_port0092_read,
                    .write = prep_port0092_write, },
+    { 0x095, 1, 1, .read = prep_port0092_read,
+                   .write = prep_port0092_write, },
     { 0x808, 1, 1, .write = prep_port0808_write, },
     { 0x80c, 1, 1, .read = prep_port080c_read, },
     { 0x810, 1, 1, .write = prep_port0810_write, },
@@ -258,10 +252,7 @@ static const MemoryRegionOps ppc_parity_error_ops = {
 
 static void prep_systemio_reset(DeviceState *dev)
 {
-    PrepSystemIoState *s = PREP_SYSTEMIO(dev);
-
-    s->sreset = 0;
-    s->cpu->env.hpte_swap = false;
+    PREP_SYSTEMIO(dev)->sreset = 0;
 }
 
 static void prep_systemio_realize(DeviceState *dev, Error **errp)
@@ -273,9 +264,6 @@ static void prep_systemio_realize(DeviceState *dev, Error **errp)
     s->iomap_type = PORT0850_IOMAP_NONCONTIGUOUS;
     qemu_set_irq(s->non_contiguous_io_map_irq,
                  s->iomap_type & PORT0850_IOMAP_NONCONTIGUOUS);
-    s->cpu = POWERPC_CPU(first_cpu);
-    s->softreset_irq = qdev_get_gpio_in(DEVICE(s->cpu), PPC6xx_INPUT_HRESET);
-
     isa_register_portio_list(isa, &s->portio, 0x0, ppc_io800_port_list, s,
                              "systemio800");
 

@@ -36,3 +36,4 @@ ppc_excp_isi(uint64_t msr, uint64_t nip) "ISI exception: msr=0x%016" PRIx64 " ni
 ppc_excp_fp_ignore(void) "Ignore floating point exception"
 ppc_excp_inval(uint64_t nip) "Invalid instruction at 0x%" PRIx64
 ppc_excp_print(const char *excp) "%s exception"
+ppc_platform_le_latch(int le, int hid0_munge, int fetch_le, uint32_t msr, int msr_le) "PReP LE latch: le=%d HID0[3]=%d fetch_le=%d MSR=0x%08x MSR[LE]=%d"

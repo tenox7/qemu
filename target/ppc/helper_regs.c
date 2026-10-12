@@ -18,16 +18,19 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/tb-flush.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
 #include "exec/cputlb.h"
 #include "system/kvm.h"
 #include "system/tcg.h"
+#include "trace.h"
 #include "helper_regs.h"
 #include "power8-pmu.h"
 #include "cpu-models.h"
 #include "spr_common.h"
 #include "internal.h"
+#include "exec/helper-proto.h"
 
 /* Swap temporary saved registers with GPRs */
 void hreg_swap_gpr_tgpr(CPUPPCState *env)
@@ -164,6 +167,23 @@ static uint32_t hreg_compute_hflags_value(CPUPPCState *env)
 
     if (msr_is_64bit(env, msr)) {
         hflags |= 1 << HFLAGS_64;
+    }
+    if (env->le_latch_present && !env->platform_le) {
+        hflags |= 1 << HFLAGS_DATA_BE;
+    }
+    if (env->platform_le_governs_fetch) {
+        msr_mask &= ~(1 << MSR_LE);
+        if (env->platform_le) {
+            hflags |= 1 << HFLAGS_LE;
+        }
+    } else if (env->platform_le_fetch) {
+        hflags |= 1 << HFLAGS_LE;
+    }
+    if (env->fetch_shadow > 0) {
+        /* Still executing what was prefetched before the switch. */
+        msr_mask &= ~(1 << MSR_LE);
+        hflags = (hflags & ~(1u << HFLAGS_LE)) |
+                 ((uint32_t)env->fetch_shadow_le << HFLAGS_LE);
     }
     if ((ppc_flags & POWERPC_FLAG_SPE) && (msr & (1 << MSR_SPE))) {
         hflags |= 1 << HFLAGS_SPE;
@@ -815,4 +835,52 @@ void register_usprgh_sprs(CPUPPCState *env)
                  &spr_read_ureg, SPR_NOACCESS,
                  &spr_read_ureg, SPR_NOACCESS,
                  0x00000000);
+}
+
+void ppc_set_platform_le(CPUPPCState *env, bool le)
+{
+    bool governs = !!(env->spr[SPR_HID0] & HID0_6XX_LE_MUNGE);
+    bool fetch_le = le && governs;
+
+    trace_ppc_platform_le_latch(le, governs, fetch_le, (uint32_t)env->msr,
+                                !!(env->msr & (1ull << MSR_LE)));
+
+    if (!env->le_latch_present || env->platform_le != le ||
+        env->platform_le_fetch != fetch_le ||
+        env->platform_le_governs_fetch != governs) {
+        bool old_le = env->hflags & (1 << HFLAGS_LE);
+
+        env->le_latch_present = true;
+        env->platform_le = le;
+        env->platform_le_fetch = fetch_le;
+        env->platform_le_governs_fetch = governs;
+        hreg_compute_hflags(env);
+        ppc_fetch_order_switched(env, old_le);
+    }
+}
+
+void ppc_fetch_order_switched(CPUPPCState *env, bool old_le)
+{
+    bool new_le = env->hflags & (1 << HFLAGS_LE);
+
+    if (new_le == old_le || env->fetch_shadow > 0) {
+        return;
+    }
+    env->fetch_shadow = PPC_FETCH_SHADOW;
+    env->fetch_shadow_le = old_le;
+    hreg_compute_hflags(env);
+    queue_tb_flush(env_cpu(env));
+    cpu_interrupt_exittb(env_cpu(env));
+}
+
+/* Runs at the start of each instruction in the shadow. */
+void helper_fetch_shadow_step(CPUPPCState *env, uint32_t ends)
+{
+    if (env->fetch_shadow <= 0) {
+        return;
+    }
+    if (--env->fetch_shadow == 0 || ends) {
+        env->fetch_shadow = 0;
+        hreg_compute_hflags(env);
+    }
 }

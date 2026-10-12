@@ -7278,6 +7278,11 @@ static void ppc_cpu_reset_hold(Object *obj, ResetType type)
         }
 #endif
     }
+    env->le_latch_present = false;
+    env->platform_le = false;
+    env->platform_le_fetch = false;
+    env->platform_le_governs_fetch = false;
+    env->fetch_shadow = 0;
     hreg_store_msr(env, msr, 1);
 
 #if !defined(CONFIG_USER_ONLY)

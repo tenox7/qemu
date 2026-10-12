@@ -861,6 +861,7 @@ enum {
     HFLAGS_DR = 4,   /* MSR_DR */
     HFLAGS_HR = 5,   /* computed from SPR_LPCR[HR] */
     HFLAGS_SPE = 6,  /* from MSR_SPE if cpu has SPE; avoid overlap w/ MSR_VR */
+    HFLAGS_DATA_BE = 7, /* data path is big-endian despite MSR_LE */
     HFLAGS_TM = 8,   /* computed from MSR_TM */
     HFLAGS_BE = 9,   /* MSR_BE -- from elsewhere on embedded ppc */
     HFLAGS_SE = 10,  /* MSR_SE -- from elsewhere on embedded ppc */
@@ -1410,7 +1411,6 @@ struct CPUArchState {
     target_ulong hreset_vector;
     hwaddr mpic_iack;
     bool mpic_proxy;  /* true if the external proxy facility mode is enabled */
-    bool hpte_swap;   /* host bridge swaps byte lanes of hash table walks */
     bool has_hv_mode; /* set when the processor has an HV mode, thus HV priv */
                       /* instructions and SPRs are diallowed if MSR:HV is 0 */
     /*
@@ -1418,6 +1418,12 @@ struct CPUArchState {
      * special way (such as routing some resume causes to 0x100, i.e. sreset).
      */
     bool resume_as_sreset;
+    bool le_latch_present;
+    bool platform_le;
+    bool platform_le_fetch;
+    bool platform_le_governs_fetch;
+    int fetch_shadow;
+    bool fetch_shadow_le;
 
     /*
      * On powernv, quiesced means the CPU has been stopped using PC direct
@@ -1672,6 +1678,9 @@ void ppc_store_dawr1(CPUPPCState *env, target_ulong value);
 void ppc_store_dawrx1(CPUPPCState *env, uint32_t value);
 #endif /* !defined(CONFIG_USER_ONLY) */
 void ppc_store_msr(CPUPPCState *env, target_ulong value);
+void ppc_set_platform_le(CPUPPCState *env, bool le);
+#define PPC_FETCH_SHADOW 6
+void ppc_fetch_order_switched(CPUPPCState *env, bool old_le);
 
 /* Time-base and decrementer management */
 uint64_t cpu_ppc_load_tbl(CPUPPCState *env);
@@ -2397,6 +2406,7 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define E500_L2CSR0_L2LFC   (1 << 10)   /* L2 cache lock flash clear */
 
 /* HID0 bits */
+#define HID0_6XX_LE_MUNGE   (1 << 3)
 #define HID0_DEEPNAP        (1 << 24)           /* pre-2.06 */
 #define HID0_DOZE           (1 << 23)           /* pre-2.06 */
 #define HID0_NAP            (1 << 22)           /* pre-2.06 */
@@ -3072,6 +3082,8 @@ static inline bool ppc_interrupts_little_endian(PowerPCCPU *cpu, bool hv)
             ile = !!(env->spr[SPR_HID0] & HID0_HILE);
         }
 
+    } else if (env->platform_le) {
+        ile = true;
     } else if (pcc->lpcr_mask & LPCR_ILE) {
         ile = !!(env->spr[SPR_LPCR] & LPCR_ILE);
     } else {

@@ -168,6 +168,7 @@ void ppc_translate_init(void)
 /* internal defines */
 struct DisasContext {
     DisasContextBase base;
+    bool fetch_shadow;
     target_ulong cia;  /* current instruction address */
     uint32_t opcode;
     /* Routine used to access memory */
@@ -6524,6 +6525,8 @@ static void ppc_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     CPUPPCState *env = cpu_env(cs);
     uint32_t hflags = ctx->base.tb->flags;
 
+    ctx->fetch_shadow = false;
+
     ctx->spr_cb = env->spr_cb;
     ctx->pr = (hflags >> HFLAGS_PR) & 1;
     ctx->mem_idx = (hflags >> HFLAGS_DMMU_IDX) & 7;
@@ -6534,7 +6537,8 @@ static void ppc_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     ctx->access_type = -1;
     ctx->need_access_type = !mmu_is_64bit(env->mmu_model);
     ctx->le_mode = (hflags >> HFLAGS_LE) & 1;
-    ctx->default_tcg_memop_mask = ctx->le_mode ? MO_LE : MO_BE;
+    ctx->default_tcg_memop_mask =
+        (ctx->le_mode && !((hflags >> HFLAGS_DATA_BE) & 1)) ? MO_LE : MO_BE;
     ctx->flags = env->flags;
 #if defined(TARGET_PPC64)
     ctx->excp_model = env->excp_model;
@@ -6584,6 +6588,28 @@ static bool is_prefix_insn(DisasContext *ctx, uint32_t insn)
     return opc1(insn) == 1;
 }
 
+static bool insn_refetches(uint32_t insn)
+{
+    switch (insn >> 26) {
+    case 16: /* bc */
+    case 17: /* sc */
+    case 18: /* b */
+        return true;
+    case 19:
+        switch ((insn >> 1) & 0x3ff) {
+        case 16:  /* bclr */
+        case 18:  /* rfid */
+        case 50:  /* rfi */
+        case 150: /* isync */
+        case 528: /* bcctr */
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
+}
+
 static void ppc_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
 {
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
@@ -6601,6 +6627,12 @@ static void ppc_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
     ctx->cia = pc = ctx->base.pc_next;
     insn = translator_ldl_end(env, dcbase, pc, mo_endian);
     ctx->base.pc_next = pc += 4;
+
+    if (env->fetch_shadow > 0) {
+        gen_helper_fetch_shadow_step(tcg_env,
+                                     tcg_constant_i32(insn_refetches(insn)));
+        ctx->fetch_shadow = true;
+    }
 
     if (!is_prefix_insn(ctx, insn)) {
         ctx->opcode = insn;
@@ -6621,6 +6653,10 @@ static void ppc_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
     }
     if (!ok) {
         gen_invalid(ctx);
+    }
+
+    if (ctx->fetch_shadow && ctx->base.is_jmp == DISAS_NEXT) {
+        ctx->base.is_jmp = DISAS_EXIT_UPDATE;
     }
 
     /* End the TB when crossing a page boundary. */
