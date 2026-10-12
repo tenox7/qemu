@@ -2298,6 +2298,10 @@ static void fdctrl_write_data(FDCtrl *fdctrl, uint32_t value)
              * as many parameters as this command requires. */
             cmd = get_command(value);
             fdctrl->data_len = cmd->parameters + 1;
+            /* A new command drops an interrupt that was never sensed */
+            if (cmd->handler != fdctrl_handle_sense_interrupt_status) {
+                fdctrl_reset_irq(fdctrl);
+            }
             if (cmd->parameters) {
                 fdctrl->msr |= FD_MSR_RQM;
             }
