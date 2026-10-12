@@ -59,6 +59,11 @@ static const VMStateDescription vmstate_isa_ne2000 = {
     }
 };
 
+static void isa_ne2000_reset(DeviceState *dev)
+{
+    ne2000_reset(&ISA_NE2000(dev)->ne2000);
+}
+
 static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
@@ -90,6 +95,7 @@ static void isa_ne2000_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = isa_ne2000_realizefn;
+    device_class_set_legacy_reset(dc, isa_ne2000_reset);
     device_class_set_props(dc, ne2000_isa_properties);
     dc->vmsd = &vmstate_isa_ne2000;
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);

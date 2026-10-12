@@ -468,10 +468,15 @@ static uint64_t jensen_sparse_read(JensenMachineState *s, AddressSpace *as,
     uint64_t value = 0;
     unsigned i;
 
-    if (as == &s->io_as && s->s3_928 && busaddr >= 0x4000 &&
-        (busaddr & 0x3fc) == 0x2e8) {
-        address_space_read(as, busaddr, MEMTXATTRS_UNSPECIFIED, data, len);
-    } else if (as == &s->io_as) {
+    /*
+     * DMA/PIT legacy ports need the ISP byte hooks. Other ISA/EISA
+     * devices receive the byte-enabled bus cycle at its original width;
+     * splitting a NE2000 data-port word changes its remote DMA semantics.
+     */
+    if (as == &s->io_as) {
+        jensen_pit2_sync(s);
+    }
+    if (as == &s->io_as && busaddr < 0x100) {
         for (i = 0; i < len; i++) {
             data[i] = jensen_io_read_byte(s, busaddr + i);
         }
@@ -493,16 +498,17 @@ static void jensen_sparse_write(JensenMachineState *s, AddressSpace *as,
     uint8_t data[4];
     unsigned i;
 
+    if (as == &s->io_as) {
+        jensen_pit2_sync(s);
+    }
     value >>= (busaddr & 3) * 8;
     for (i = 0; i < len; i++) {
         data[i] = value >> (i * 8);
-        if (as == &s->io_as && !(s->s3_928 && busaddr >= 0x4000 &&
-                               (busaddr & 0x3fc) == 0x2e8)) {
+        if (as == &s->io_as && busaddr < 0x100) {
             jensen_io_write_byte(s, busaddr + i, data[i]);
         }
     }
-    if (as != &s->io_as || (s->s3_928 && busaddr >= 0x4000 &&
-                               (busaddr & 0x3fc) == 0x2e8)) {
+    if (as != &s->io_as || busaddr >= 0x100) {
         address_space_write(as, busaddr, MEMTXATTRS_UNSPECIFIED, data, len);
     }
 }

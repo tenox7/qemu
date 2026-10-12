@@ -125,7 +125,10 @@ void ne2000_reset(NE2000State *s)
 {
     int i;
 
+    s->cmd = E8390_NODMA | E8390_STOP; /* DP8390 reset command: 0x21. */
     s->isr = ENISR_RESET;
+    qemu_set_irq(s->irq, 0);
+    memset(s->mem, 0, 32); /* Rebuild the fixed station-address PROM. */
     memcpy(s->mem, &s->c.macaddr, 6);
     s->mem[14] = 0x57;
     s->mem[15] = 0x57;
