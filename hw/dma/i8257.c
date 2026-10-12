@@ -38,7 +38,7 @@
 
 /* #define DEBUG_DMA */
 
-#define dolog(...) fprintf (stderr, "dma: " __VA_ARGS__)
+#define dolog(...) qemu_log_mask(LOG_GUEST_ERROR, "dma: " __VA_ARGS__)
 #ifdef DEBUG_DMA
 #define linfo(...) fprintf (stderr, "dma: " __VA_ARGS__)
 #define ldebug(...) fprintf (stderr, "dma: " __VA_ARGS__)

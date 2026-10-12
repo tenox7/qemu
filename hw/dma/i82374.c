@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qemu/log.h"
 #include "qemu/module.h"
 #include "hw/isa/isa.h"
 #include "hw/core/qdev-properties.h"
@@ -44,7 +45,7 @@ do { fprintf(stderr, "i82374: " fmt , ## __VA_ARGS__); } while (0)
 do {} while (0)
 #endif
 #define BADF(fmt, ...) \
-do { fprintf(stderr, "i82374 ERROR: " fmt , ## __VA_ARGS__); } while (0)
+    qemu_log_mask(LOG_UNIMP, "i82374: " fmt, ## __VA_ARGS__)
 
 struct I82374State {
     ISADevice parent_obj;
