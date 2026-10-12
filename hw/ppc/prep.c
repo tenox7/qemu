@@ -338,7 +338,8 @@ static void ibm_40p_init(MachineState *machine)
     /* RTC */
     isa_dev = isa_new(TYPE_MC146818_RTC);
     dev = DEVICE(isa_dev);
-    qdev_prop_set_int32(dev, "base_year", 1900);
+    qdev_prop_set_int32(dev, "base_year", 2000);
+    qdev_prop_set_bit(dev, "century-byte", false);
     isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
     /* initialize CMOS checksums */
