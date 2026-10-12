@@ -328,10 +328,29 @@ int vga_ioport_invalid(VGACommonState *s, uint32_t addr)
     }
 }
 
+static uint32_t vga_ioport_alias(VGACommonState *s, uint32_t addr)
+{
+    if (!s->partial_init) {
+        return addr;
+    }
+    switch (addr) {
+    case VGA_CRT_IM:
+        return VGA_CRT_IC;
+    case VGA_CRT_DM:
+        return VGA_CRT_DC;
+    case VGA_IS1_RM:
+        return VGA_IS1_RC;
+    default:
+        return addr;
+    }
+}
+
 uint32_t vga_ioport_read(void *opaque, uint32_t addr)
 {
     VGACommonState *s = opaque;
     int val, index;
+
+    addr = vga_ioport_alias(s, addr);
 
     if (vga_ioport_invalid(s, addr)) {
         val = 0xff;
@@ -422,6 +441,8 @@ void vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 {
     VGACommonState *s = opaque;
     int index;
+
+    addr = vga_ioport_alias(s, addr);
 
     /* check port range access depending on color/monochrome mode */
     if (vga_ioport_invalid(s, addr)) {
@@ -1521,8 +1542,8 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
 
     /* bits 5-6: 0 = 16-color mode, 1 = 4-color mode, 2 = 256-color mode.  */
     shift_control = (s->gr[VGA_GFX_MODE] >> 5) & 3;
-    if (depth >= 8) {
-        /* packed pixels, even when selected outside GR05 (S3 enhanced mode) */
+    if (s->native_mode && s->native_mode(s)) {
+        /* Packed pixels at get_bpp() depth whatever GR05 says. */
         shift_control = 2;
     }
     double_scan = (s->cr[VGA_CRTC_MAX_SCAN] >> 7);
@@ -1906,6 +1927,23 @@ void vga_common_reset(VGACommonState *s)
         memset(&s->retrace_info, 0, sizeof (s->retrace_info));
         break;
     }
+
+    if (s->partial_init) {
+        static const uint8_t ar_reset[VGA_ATT_C] = {
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            [VGA_ATC_MODE]         = 0x0c,
+            [VGA_ATC_OVERSCAN]     = 0x00,
+            [VGA_ATC_PLANE_ENABLE] = 0x0f,
+            [VGA_ATC_PEL]          = 0x08,
+            [VGA_ATC_COLOR_PAGE]   = 0x00,
+        };
+
+        s->msr |= VGA_MIS_COLOR;
+        memcpy(s->ar, ar_reset, sizeof(ar_reset));
+        s->ar_index |= 0x20;
+    }
+
     vga_update_memory_access(s);
 }
 

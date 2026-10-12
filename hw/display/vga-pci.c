@@ -337,6 +337,7 @@ static const Property vga_pci_properties[] = {
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_QEXT, true),
     DEFINE_PROP_BIT("edid",
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_EDID, true),
+    DEFINE_PROP_BOOL("partial-init", PCIVGAState, vga.partial_init, false),
     DEFINE_EDID_PROPERTIES(PCIVGAState, edid_info),
 };
 

@@ -99,6 +99,7 @@ typedef struct VGACommonState {
     uint8_t palette[768];
     int32_t bank_offset;
     int (*get_bpp)(struct VGACommonState *s);
+    bool (*native_mode)(struct VGACommonState *s);
     void (*get_params)(struct VGACommonState *s, VGADisplayParams *params);
     void (*get_resolution)(struct VGACommonState *s,
                         int *pwidth,
@@ -137,6 +138,7 @@ typedef struct VGACommonState {
     bool full_update_text;
     bool full_update_gfx;
     bool big_endian_fb;
+    bool partial_init;
     bool default_endian_fb;
     bool global_vmstate;
     /* hardware mouse cursor support */

@@ -1547,6 +1547,7 @@ static void s3_realize(PCIDevice *d, Error **errp)
         return;
     }
     vga->get_bpp = s3_get_bpp;
+    vga->native_mode = s3_enhanced;
     vga->get_params = s3_get_params;
     vga->get_resolution = s3_get_resolution;
     vga->cursor_invalidate = s3_cursor_invalidate;
