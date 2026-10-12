@@ -231,10 +231,7 @@ static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
 
 static bool nvram_kept(Nvram *nvram)
 {
-    g_autofree char *file = object_property_get_str(OBJECT(nvram), "filename",
-                                                    NULL);
-
-    return file && *file;
+    return object_property_get_bool(OBJECT(nvram), "persistent", NULL);
 }
 
 static void ibm_40p_init(MachineState *machine)

@@ -53,8 +53,10 @@ typedef struct M48t59State {
     QEMUTimer *wd_timer;
     /* NVRAM storage */
     uint8_t *buffer;
-    char *filename;
-    FILE *file;
+    BlockBackend *blk;
+    QEMUTimer *flush_timer;
+    uint32_t dirty_start;
+    uint32_t dirty_end;
     /* Model parameters */
     uint32_t model; /* 2 = m48t02, 8 = m48t08, 59 = m48t59 */
     /* NVRAM storage */

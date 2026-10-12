@@ -26,6 +26,7 @@
 #include "qemu/osdep.h"
 #include "hw/isa/isa.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/rtc/m48t59.h"
 #include "m48t59-internal.h"
 #include "qapi/error.h"
@@ -81,8 +82,19 @@ static const Property m48t59_isa_properties[] = {
     DEFINE_PROP_INT32("base-year", M48txxISAState, state.base_year, 0),
     DEFINE_PROP_UINT32("iobase", M48txxISAState, io_base, 0x74),
     DEFINE_PROP_UINT8("irq", M48txxISAState, isairq, 8),
-    DEFINE_PROP_STRING("filename", M48txxISAState, state.filename),
+    DEFINE_PROP_DRIVE("drive", M48txxISAState, state.blk),
 };
+
+static bool m48txx_isa_get_persistent(Object *obj, Error **errp)
+{
+    return M48TXX_ISA(obj)->state.blk != NULL;
+}
+
+static void m48txx_isa_initfn(Object *obj)
+{
+    object_property_add_bool(obj, "persistent",
+                             m48txx_isa_get_persistent, NULL);
+}
 
 static void m48t59_reset_isa(DeviceState *d)
 {
@@ -139,6 +151,7 @@ static const TypeInfo m48txx_isa_type_info = {
     .name = TYPE_M48TXX_ISA,
     .parent = TYPE_ISA_DEVICE,
     .instance_size = sizeof(M48txxISAState),
+    .instance_init = m48txx_isa_initfn,
     .abstract = true,
     .class_init = m48txx_isa_class_init,
     .interfaces = (const InterfaceInfo[]) {

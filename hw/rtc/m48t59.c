@@ -34,8 +34,9 @@
 #include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/bcd.h"
-#include "qemu/error-report.h"
+#include "qemu/log.h"
 #include "qemu/module.h"
+#include "system/block-backend.h"
 #include "trace.h"
 #include "system/watchdog.h"
 
@@ -188,6 +189,52 @@ static void set_up_watchdog(M48t59State *NVRAM, uint8_t value)
 }
 
 /* Direct access to NVRAM */
+#define NVRAM_FLUSH_DELAY_NS (100 * SCALE_MS)
+
+static void m48t59_flush(M48t59State *NVRAM)
+{
+    uint32_t start = NVRAM->dirty_start;
+    uint32_t len;
+    int ret;
+
+    if (!NVRAM->blk || NVRAM->dirty_end <= start) {
+        return;
+    }
+    len = NVRAM->dirty_end - start;
+    NVRAM->dirty_start = NVRAM->size;
+    NVRAM->dirty_end = 0;
+
+    ret = blk_pwrite(NVRAM->blk, start, len, NVRAM->buffer + start, 0);
+    if (ret < 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "m48t59: could not write back NVRAM contents\n");
+    }
+}
+
+static void m48t59_flush_cb(void *opaque)
+{
+    m48t59_flush(opaque);
+}
+
+static void m48t59_mark_dirty(M48t59State *NVRAM, uint32_t addr)
+{
+    if (!NVRAM->blk) {
+        return;
+    }
+
+    if (NVRAM->dirty_end == 0) {
+        /* First byte of a new window - arm the timer. */
+        NVRAM->dirty_start = addr;
+        NVRAM->dirty_end = addr + 1;
+        timer_mod(NVRAM->flush_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + NVRAM_FLUSH_DELAY_NS);
+        return;
+    }
+
+    NVRAM->dirty_start = MIN(NVRAM->dirty_start, addr);
+    NVRAM->dirty_end = MAX(NVRAM->dirty_end, addr + 1);
+}
+
 void m48t59_write(M48t59State *NVRAM, uint32_t addr, uint32_t val)
 {
     struct tm tm;
@@ -347,11 +394,7 @@ void m48t59_write(M48t59State *NVRAM, uint32_t addr, uint32_t val)
     do_write:
         if (addr < NVRAM->size) {
             NVRAM->buffer[addr] = val & 0xFF;
-            if (NVRAM->file) {
-                fseek(NVRAM->file, addr, SEEK_SET);
-                fputc(val & 0xFF, NVRAM->file);
-                fflush(NVRAM->file);
-            }
+            m48t59_mark_dirty(NVRAM, addr);
         }
         break;
     }
@@ -569,31 +612,50 @@ const MemoryRegionOps m48t59_io_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static void m48t59_vm_state_change(void *opaque, bool running, RunState state)
+{
+    if (!running) {
+        /* Get the last window on disk before the VM is torn down. */
+        m48t59_flush(opaque);
+    }
+}
+
 void m48t59_realize_common(M48t59State *s, Error **errp)
 {
     s->buffer = g_malloc0(s->size);
-    if (s->filename) {
-        FILE *f = fopen(s->filename, "rb");
-
-        if (f) {
-            if (fread(s->buffer, s->size, 1, f) != 1) {
-                warn_report("m48t59: short read from %s", s->filename);
-            }
-            fclose(f);
-        }
-        s->file = fopen(s->filename, "wb");
-        if (!s->file) {
-            error_setg_file_open(errp, errno, s->filename);
-            return;
-        }
-        fwrite(s->buffer, s->size, 1, s->file);
-        fflush(s->file);
-    }
     if (s->model == 59) {
         s->alrm_timer = timer_new_ns(rtc_clock, &alarm_cb, s);
         s->wd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &watchdog_cb, s);
     }
     qemu_get_timedate(&s->alarm, 0);
+
+    if (s->blk) {
+        int64_t len = blk_getlength(s->blk);
+
+        if (len < 0) {
+            error_setg_errno(errp, -len,
+                             "could not get length of NVRAM backing image");
+            return;
+        }
+        if (len != s->size) {
+            error_setg(errp, "NVRAM backing image must be exactly %" PRIu32
+                       " bytes, got %" PRId64, s->size, len);
+            return;
+        }
+        if (blk_set_perm(s->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE,
+                         BLK_PERM_ALL, errp) < 0) {
+            return;
+        }
+        if (blk_pread(s->blk, 0, s->size, s->buffer, 0) < 0) {
+            error_setg(errp, "could not read NVRAM backing image");
+            return;
+        }
+
+        s->dirty_start = s->size;
+        s->dirty_end = 0;
+        s->flush_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &m48t59_flush_cb, s);
+        qemu_add_vm_change_state_handler(m48t59_vm_state_change, s);
+    }
 }
 
 static void m48t59_init1(Object *obj)
