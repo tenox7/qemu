@@ -1521,6 +1521,10 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
 
     /* bits 5-6: 0 = 16-color mode, 1 = 4-color mode, 2 = 256-color mode.  */
     shift_control = (s->gr[VGA_GFX_MODE] >> 5) & 3;
+    if (depth >= 8) {
+        /* packed pixels, even when selected outside GR05 (S3 enhanced mode) */
+        shift_control = 2;
+    }
     double_scan = (s->cr[VGA_CRTC_MAX_SCAN] >> 7);
     if (s->cr[VGA_CRTC_MODE] & 1) {
         multi_scan = (((s->cr[VGA_CRTC_MAX_SCAN] & 0x1f) + 1) << double_scan)
