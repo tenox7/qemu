@@ -65,6 +65,11 @@
 /* OS/2's S3 PMI driver expects the frame buffer here */
 #define PREP_VGA_FB_BASE  0x02800000
 
+/* The firmware leaves network cards unconfigured, place them after the SCSI */
+#define PREP_NIC_IO_BASE  0x20001000
+#define PREP_NIC_MEM_BASE 0x08000000
+#define PREP_PCI_IRQ      15
+
 /* Two ports physically on the machine */
 #define PREP_SERIAL_PORTS 2
 
@@ -239,6 +244,7 @@ static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
 }
 
 static PCIDevice *prep_vga;
+static PCIBus *prep_pci_bus;
 
 static void prep_vga_bar_reset(void *opaque)
 {
@@ -250,10 +256,52 @@ static void prep_vga_bar_reset(void *opaque)
                              PCI_COMMAND_MEMORY, 2);
 }
 
+typedef struct PrepNicWindows {
+    pcibus_t io;
+    pcibus_t mem;
+} PrepNicWindows;
+
+static void prep_nic_bar_assign(PCIBus *bus, PCIDevice *d, void *opaque)
+{
+    PrepNicWindows *w = opaque;
+    int r;
+
+    if (pci_get_byte(d->config + PCI_CLASS_DEVICE + 1) !=
+        PCI_BASE_CLASS_NETWORK) {
+        return;
+    }
+    for (r = 0; r < PCI_ROM_SLOT; r++) {
+        PCIIORegion *region = &d->io_regions[r];
+        pcibus_t *next = region->type & PCI_BASE_ADDRESS_SPACE_IO ?
+                         &w->io : &w->mem;
+
+        if (!region->size || region->type & PCI_BASE_ADDRESS_MEM_TYPE_64) {
+            continue;
+        }
+        *next = ROUND_UP(*next, region->size);
+        pci_default_write_config(d, pci_bar(d, r), *next, 4);
+        *next += region->size;
+    }
+    pci_default_write_config(d, PCI_INTERRUPT_LINE, PREP_PCI_IRQ, 1);
+    pci_default_write_config(d, PCI_COMMAND, PCI_COMMAND_IO |
+                             PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER, 2);
+}
+
+static void prep_nic_bar_reset(void *opaque)
+{
+    PrepNicWindows w = { PREP_NIC_IO_BASE, PREP_NIC_MEM_BASE };
+
+    pci_for_each_device(opaque, 0, prep_nic_bar_assign, &w);
+}
+
 static void prep_machine_done(Notifier *notifier, void *data)
 {
-    qemu_register_reset(prep_vga_bar_reset, prep_vga);
-    prep_vga_bar_reset(prep_vga);
+    if (prep_vga) {
+        qemu_register_reset(prep_vga_bar_reset, prep_vga);
+        prep_vga_bar_reset(prep_vga);
+    }
+    qemu_register_reset(prep_nic_bar_reset, prep_pci_bus);
+    prep_nic_bar_reset(prep_pci_bus);
 }
 
 static Notifier prep_machine_done_notifier = {
@@ -343,7 +391,7 @@ static void ibm_40p_init(MachineState *machine)
     qdev_connect_gpio_out(i82378_dev, 0,
                           qdev_get_gpio_in(DEVICE(cpu), PPC6xx_INPUT_INT));
 
-    sysbus_connect_irq(pcihost, 0, qdev_get_gpio_in(i82378_dev, 15));
+    sysbus_connect_irq(pcihost, 0, qdev_get_gpio_in(i82378_dev, PREP_PCI_IRQ));
     isa_bus = ISA_BUS(qdev_get_child_bus(i82378_dev, "isa.0"));
 
     /* system control ports */
@@ -409,14 +457,13 @@ static void ibm_40p_init(MachineState *machine)
         qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(i82378_dev, 13));
 
         prep_vga = pci_vga_init(pci_bus);
-        if (prep_vga) {
-            qemu_add_machine_init_done_notifier(&prep_machine_done_notifier);
-        }
 
         /* First PCNET device at PCI_DEVFN(3, 0) */
         pci_init_nic_in_slot(pci_bus, mc->default_nic, NULL, "3");
         pci_init_nic_devices(pci_bus, mc->default_nic);
     }
+    prep_pci_bus = pci_bus;
+    qemu_add_machine_init_done_notifier(&prep_machine_done_notifier);
 
     /* Prepare firmware configuration for OpenBIOS */
     dev = qdev_new(TYPE_FW_CFG_MEM);
