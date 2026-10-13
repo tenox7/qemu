@@ -346,7 +346,6 @@ static void p9100_update_mode(P9100State *s)
     s->height = height;
     s->depth = depth;
     s->pitch = pitch;
-    qemu_console_resize(s->con, width, height);
     s->full_update = true;
 }
 
@@ -499,7 +498,19 @@ static bool p9100_update_display(void *opaque)
     s->interrupt |= P9100_INT_VBLANKED;
     p9100_update_irq(s);
 
-    if (!s->width || surface_bits_per_pixel(surface) != 32) {
+    if (!s->width) {
+        return true;
+    }
+    /*
+     * Resize here rather than on the mode register write: the UI may only be
+     * called from the main loop, SDL on macOS deadlocks from a vCPU thread.
+     */
+    if (surface_width(surface) != s->width ||
+        surface_height(surface) != s->height) {
+        qemu_console_resize(s->con, s->width, s->height);
+        surface = qemu_console_surface(s->con);
+    }
+    if (surface_bits_per_pixel(surface) != 32) {
         return true;
     }
     vram = memory_region_get_ram_ptr(&s->vram);
