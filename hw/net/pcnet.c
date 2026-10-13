@@ -1635,8 +1635,9 @@ void pcnet_ioport_writel(void *opaque, uint32_t addr, uint32_t val)
             break;
         }
     } else if ((addr & 0x0f) == 0) {
-        /* switch device to dword i/o mode */
+        /* switch device to dword i/o mode, the data still goes to the RDP */
         pcnet_bcr_writew(s, BCR_BSBC, pcnet_bcr_readw(s, BCR_BSBC) | 0x0080);
+        pcnet_csr_writew(s, s->rap, val & 0xffff);
 #ifdef PCNET_DEBUG_IO
         printf("device switched into dword i/o mode\n");
 #endif

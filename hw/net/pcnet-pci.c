@@ -86,28 +86,32 @@ static uint64_t pcnet_ioport_read(void *opaque, hwaddr addr,
                                   unsigned size)
 {
     PCNetState *d = opaque;
+    uint64_t mask = ((uint64_t)1 << (size * 8)) - 1;
+    uint64_t val = 0;
+    unsigned i;
 
     trace_pcnet_ioport_read(opaque, addr, size);
+    /*
+     * The chip decodes only A31:2 and drives the whole DWord, so narrower
+     * reads return part of it in either I/O mode.  Solaris relies on this.
+     */
     if (addr < 0x10) {
-        if (!BCR_DWIO(d) && size == 1) {
-            return pcnet_aprom_readb(d, addr);
-        } else if (!BCR_DWIO(d) && (addr & 1) == 0 && size == 2) {
-            return pcnet_aprom_readb(d, addr) |
-                   (pcnet_aprom_readb(d, addr + 1) << 8);
-        } else if (BCR_DWIO(d) && (addr & 3) == 0 && size == 4) {
-            return pcnet_aprom_readb(d, addr) |
-                   (pcnet_aprom_readb(d, addr + 1) << 8) |
-                   (pcnet_aprom_readb(d, addr + 2) << 16) |
-                   (pcnet_aprom_readb(d, addr + 3) << 24);
+        for (i = 0; i < size; i++) {
+            val |= (uint64_t)pcnet_aprom_readb(d, addr + i) << (i * 8);
         }
-    } else {
-        if (size == 2) {
-            return pcnet_ioport_readw(d, addr);
-        } else if (size == 4) {
-            return pcnet_ioport_readl(d, addr);
-        }
+        return val;
     }
-    return ((uint64_t)1 << (size * 8)) - 1;
+    if (BCR_DWIO(d) && size < 4) {
+        val = pcnet_ioport_readl(d, addr & ~3);
+        return (val >> ((addr & 3) * 8)) & mask;
+    }
+    if (size == 2) {
+        return pcnet_ioport_readw(d, addr);
+    }
+    if (size == 4) {
+        return pcnet_ioport_readl(d, addr);
+    }
+    return mask;
 }
 
 static void pcnet_ioport_write(void *opaque, hwaddr addr,
