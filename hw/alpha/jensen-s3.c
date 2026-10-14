@@ -80,13 +80,14 @@ static unsigned s3_pitch(JensenS3State *s)
     unsigned extension = s->vga.cr[0x51] & 0x30;
     unsigned offset = s->vga.cr[0x13] |
         (extension ? extension << 4 : (s->vga.cr[0x43] & 4) << 6);
-    return offset * 8;
+    /* A zero offset wraps to 256, as in 86Box (NT 3.1's 2048-byte pitch). */
+    return (offset ? offset : 0x100) * 8;
 }
 
 static bool s3_cursor_external(JensenS3State *s)
 {
-    /* Same Bt485 routing as the Metheus 928 in 86Box. */
-    return s->vga.cr[0x55] & 0x28;
+    /* Metheus 928 routing as in 86Box; NT 3.1 just enables the Bt485 cursor. */
+    return (s->vga.cr[0x55] & 0x28) || (s->dac_command[2] & 3);
 }
 
 /* Bt485 coordinates include a one-cursor-width/height bias. */
@@ -354,6 +355,13 @@ static void s3_resolution(VGACommonState *vga, int *width, int *height)
                 *width *= 2;
                 break;
             }
+        } else if (s3_bpp(vga) == 8 && *width * 4 <= s3_pitch(s)) {
+            /*
+             * NT 3.1's Number Nine GXE 1280x1024 table has 4:1 CRTC timing
+             * but leaves the Bt485 on its VGA port; the x86 BIOS mode set
+             * the table came from also switched the DAC to 4:1 multiplexing.
+             */
+            *width *= 4;
         }
     }
 }
@@ -398,12 +406,19 @@ static uint32_t s3_mix(unsigned mix, uint32_t src, uint32_t dst)
     g_assert_not_reached();
 }
 
+static unsigned s3_pixel_bytes(JensenS3State *s)
+{
+    return 1 + ((s->vga.cr[0x50] >> 4) & 3);
+}
+
 static unsigned s3_engine_pitch(JensenS3State *s)
 {
     /* CR50 sets the engine stride independently of the display offset. */
     switch (s->vga.cr[0x50] & 0xc1) {
     case 0x00:
-        return s->vga.cr[0x31] & 2 ? 2048 : 1024;
+        /* NT 3.1's 1280x1024 mode has a 2048-pixel pitch but CR31 bit 1 clear. */
+        return (s->vga.cr[0x31] & 2) ||
+               s3_pitch(s) == 2048 * s3_pixel_bytes(s) ? 2048 : 1024;
     case 0x01:
         return 1152;
     case 0x40:
@@ -417,11 +432,6 @@ static unsigned s3_engine_pitch(JensenS3State *s)
     default:
         return 1024;
     }
-}
-
-static unsigned s3_pixel_bytes(JensenS3State *s)
-{
-    return 1 + ((s->vga.cr[0x50] >> 4) & 3);
 }
 
 /* A pixel can straddle the end of installed VRAM. */
