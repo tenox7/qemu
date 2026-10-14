@@ -522,6 +522,7 @@ typedef struct UpdateExceptionFlags {
     bool update_exc_sum;
     bool update_mm_stat;
     bool update_va;
+    bool data_fault;
 } UpdateExceptionFlags;
 
 #define COPY_FIELD(dst, r1, f1, src, r2, f2)                            \
@@ -535,6 +536,23 @@ static inline uint8_t convert_opcode(uint8_t opc)
      * HW_LD is displayed as 3 and HW_ST is displayed as 7.
      */
     return (opc == OPC_HW_LD || opc == OPC_HW_ST) ? opc - 0x18 : opc;
+}
+
+/*
+ * The 21064 latches the unmasked Rb + disp of LDQ_U/STQ_U in VA. NT 3.1's
+ * loader (LprpUnprotectThunk) matches it against the 4-byte IAT slot.
+ */
+static uint64_t ev4_unmasked_va(CPUAlphaState *env, uint32_t insn,
+                                uint64_t va)
+{
+    uint32_t opc = get_opc(insn), rb = get_rb(insn);
+    uint64_t ea;
+
+    if (opc != OPC_LDQ_U && opc != OPC_STQ_U) {
+        return va;
+    }
+    ea = (rb == 31 ? 0 : alpha_cpu_get_reg_value(env, rb)) + (int16_t)insn;
+    return (ea & ~7ULL) == (va & ~7ULL) ? ea : va;
 }
 
 static void alpha_update_exception_state_ev4(CPUAlphaState *env,
@@ -575,6 +593,10 @@ static void alpha_update_exception_state_ev4(CPUAlphaState *env,
 
         SET_FIELD(mm_stat, EV4_MMCSR, RA, get_ra(insn));
         SET_FIELD(mm_stat, EV4_MMCSR, OPCODE, get_opc(insn));
+        if (flags.data_fault && !alpha_is_pal(env)) {
+            env->exception.vaddress =
+                ev4_unmasked_va(env, insn, env->exception.vaddress);
+        }
     }
 
     env->ipr.exc_addr = exc_addr | alpha_is_pal(env);
@@ -941,6 +963,7 @@ void alpha_cpu_do_interrupt(CPUState *cs)
         flags.update_exc_sum = true;
         flags.update_mm_stat = true;
         flags.update_va = true;
+        flags.data_fault = true;
         alpha_update_exception_state(env, flags, 0);
         qemu_log_mask(CPU_LOG_INT,
                       "...with EXC_SUM 0x%" PRIx64 "\n"
