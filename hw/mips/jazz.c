@@ -279,7 +279,8 @@ static void mips_jazz_init(MachineState *machine,
     memory_region_add_subregion(address_space, 0x8000b000, dp8393x_prom);
 
     /* ISA bus: IO space at 0x90000000, mem space at 0x91000000 */
-    memory_region_init(isa_io, NULL, "isa-io", 0x00010000);
+    memory_region_init_io(isa_io, NULL, &unassigned_io_ops, NULL, "isa-io",
+                          0x00010000);
     memory_region_init(isa_mem, NULL, "isa-mem", 0x01000000);
     memory_region_add_subregion(address_space, 0x90000000, isa_io);
     memory_region_add_subregion(address_space, 0x91000000, isa_mem);
@@ -288,7 +289,7 @@ static void mips_jazz_init(MachineState *machine,
     /* ISA devices */
     i8259 = i8259_init(isa_bus, env->irq[4]);
     isa_bus_register_input_irqs(isa_bus, i8259);
-    i8257_dma_init(OBJECT(rc4030), isa_bus, 0);
+    i8257_dma_init(OBJECT(rc4030), isa_bus, true);
     /* firmware POST treats a free-running PIT IRQ0 as a spurious interrupt */
     pit = isa_new(TYPE_I8254);
     qdev_prop_set_uint32(DEVICE(pit), "iobase", 0x40);
