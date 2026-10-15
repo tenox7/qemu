@@ -43,11 +43,13 @@ void pit_set_gate(PITCommonState *pit, int channel, int val)
 /* get pit output bit */
 int pit_get_out(PITChannelState *s, int64_t current_time)
 {
-    uint64_t d;
+    uint64_t d = 0;
     int out;
 
-    d = muldiv64(current_time - s->count_load_time, PIT_FREQ,
-                 NANOSECONDS_PER_SECOND);
+    if (pit_counting(s)) {
+        d = muldiv64(current_time - s->count_load_time, PIT_FREQ,
+                     NANOSECONDS_PER_SECOND);
+    }
     switch (s->mode) {
     default:
     case 0:
@@ -78,6 +80,9 @@ int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time)
     uint64_t d, next_time, base;
     int period2;
 
+    if (!pit_counting(s)) {
+        return -1;
+    }
     d = muldiv64(current_time - s->count_load_time, PIT_FREQ,
                  NANOSECONDS_PER_SECOND);
     switch (s->mode) {
