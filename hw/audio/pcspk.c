@@ -57,6 +57,7 @@ struct PCSpkState {
     unsigned int play_pos;
     uint8_t data_on;
     uint8_t dummy_refresh_clock;
+    uint8_t chk_disable; /* parity and IOCHK disable, bits 2-3 */
 };
 
 static const char *s_spk = "pcspk";
@@ -142,8 +143,8 @@ static uint64_t pcspk_io_read(void *opaque, hwaddr addr,
 
     s->dummy_refresh_clock ^= (1 << 4);
 
-    val = ch.gate | (s->data_on << 1) | s->dummy_refresh_clock |
-       (ch.out << 5);
+    val = ch.gate | (s->data_on << 1) | s->chk_disable |
+          s->dummy_refresh_clock | (ch.out << 5);
 
     trace_pcspk_io_read(s->iobase, val);
 
@@ -159,6 +160,7 @@ static void pcspk_io_write(void *opaque, hwaddr addr, uint64_t val,
     trace_pcspk_io_write(s->iobase, val);
 
     s->data_on = (val >> 1) & 1;
+    s->chk_disable = val & 0x0c;
     pit_set_gate(s->pit, 2, gate);
     if (s->voice) {
         if (gate) /* restart */
@@ -203,11 +205,12 @@ static void pcspk_realizefn(DeviceState *dev, Error **errp)
 
 static const VMStateDescription vmstate_spk = {
     .name = "pcspk",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT8(data_on, PCSpkState),
         VMSTATE_UINT8(dummy_refresh_clock, PCSpkState),
+        VMSTATE_UINT8_V(chk_disable, PCSpkState, 2),
         VMSTATE_END_OF_LIST()
     }
 };
