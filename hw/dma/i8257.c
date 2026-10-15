@@ -80,6 +80,7 @@ static void i8257_write_page(void *opaque, uint32_t nport, uint32_t data)
         return;
     }
     d->regs[ichan].page = data;
+    d->regs[ichan].pageh = 0;
 }
 
 static void i8257_write_pageh(void *opaque, uint32_t nport, uint32_t data)
@@ -172,6 +173,12 @@ static void i8257_write_chan(void *opaque, hwaddr nport, uint64_t data,
     ichan = iport >> 1;
     nreg = iport & 1;
     r = d->regs + ichan;
+    /* EISA: an ISA-style write clears the high page or high count */
+    if (nreg == ADDR) {
+        r->pageh = 0;
+    } else {
+        d->counth[ichan] = 0;
+    }
     if (i8257_getff(d)) {
         r->base[nreg] = (r->base[nreg] & 0xff) | ((data << 8) & 0xff00);
         i8257_init_chan(d, ichan);
@@ -282,6 +289,7 @@ static uint64_t i8257_read_cont(void *opaque, hwaddr nport, unsigned size)
         d->status &= 0xf0;
         break;
     case 0x01:                  /* mask */
+    case 0x07:                  /* EISA: read all mask bits */
         val = d->mask;
         break;
     default:
@@ -504,6 +512,65 @@ static const MemoryRegionOps channel_io_ops = {
     },
 };
 
+/* EISA high count registers, at the count register offsets */
+static uint64_t i8257_read_counth(void *opaque, hwaddr nport, unsigned size)
+{
+    I8257State *d = opaque;
+    int iport = (nport >> d->dshift) & 7;
+
+    return (iport & 1) ? d->counth[iport >> 1] : 0;
+}
+
+static void i8257_write_counth(void *opaque, hwaddr nport, uint64_t data,
+                               unsigned size)
+{
+    I8257State *d = opaque;
+    int iport = (nport >> d->dshift) & 7;
+
+    if (iport & 1) {
+        d->counth[iport >> 1] = data;
+    }
+}
+
+static const MemoryRegionOps counth_io_ops = {
+    .read = i8257_read_counth,
+    .write = i8257_write_counth,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
+/* EISA stop registers, 3 bytes per channel, bits 1:0 reserved */
+static uint64_t i8257_read_stop(void *opaque, hwaddr nport, unsigned size)
+{
+    I8257State *d = opaque;
+
+    return (nport & 3) == 3 ? 0 : d->stop[nport >> 2][nport & 3];
+}
+
+static void i8257_write_stop(void *opaque, hwaddr nport, uint64_t data,
+                             unsigned size)
+{
+    I8257State *d = opaque;
+
+    if ((nport & 3) == 3) {
+        return;
+    }
+    d->stop[nport >> 2][nport & 3] = (nport & 3) ? data : data & 0xfc;
+}
+
+static const MemoryRegionOps stop_io_ops = {
+    .read = i8257_read_stop,
+    .write = i8257_write_stop,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
 /* IOport from page_base */
 static const MemoryRegionPortio page_portio_list[] = {
     { 0x01, 3, 1, .write = i8257_write_page, .read = i8257_read_page, },
@@ -514,7 +581,7 @@ static const MemoryRegionPortio page_portio_list[] = {
 /* IOport from pageh_base */
 static const MemoryRegionPortio pageh_portio_list[] = {
     { 0x01, 3, 1, .write = i8257_write_pageh, .read = i8257_read_pageh, },
-    { 0x07, 3, 1, .write = i8257_write_pageh, .read = i8257_read_pageh, },
+    { 0x07, 1, 1, .write = i8257_write_pageh, .read = i8257_read_pageh, },
     PORTIO_END_OF_LIST(),
 };
 
@@ -552,6 +619,25 @@ static int i8257_post_load(void *opaque, int version_id)
     return 0;
 }
 
+static bool i8257_eisa_needed(void *opaque)
+{
+    I8257State *d = opaque;
+
+    return d->pageh_base >= 0;
+}
+
+static const VMStateDescription vmstate_i8257_eisa = {
+    .name = "dma/eisa",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = i8257_eisa_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT8_ARRAY(counth, I8257State, 4),
+        VMSTATE_UINT8_2DARRAY(stop, I8257State, 4, 3),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const VMStateDescription vmstate_i8257 = {
     .name = "dma",
     .version_id = 1,
@@ -565,6 +651,10 @@ static const VMStateDescription vmstate_i8257 = {
         VMSTATE_STRUCT_ARRAY(regs, I8257State, 4, 1, vmstate_i8257_regs,
                              I8257Regs),
         VMSTATE_END_OF_LIST()
+    },
+    .subsections = (const VMStateDescription * const []) {
+        &vmstate_i8257_eisa,
+        NULL
     }
 };
 
@@ -586,6 +676,14 @@ static void i8257_realize(DeviceState *dev, Error **errp)
         isa_register_portio_list(isa, &d->portio_pageh,
                                  d->pageh_base, pageh_portio_list, d,
                                  "dma-pageh");
+        memory_region_init_io(&d->counth_io, OBJECT(dev), &counth_io_ops, d,
+                              "dma-counth", 8 << d->dshift);
+        memory_region_add_subregion(isa_address_space_io(isa),
+                                    0x400 + d->base, &d->counth_io);
+        memory_region_init_io(&d->stop_io, OBJECT(dev), &stop_io_ops, d,
+                              "dma-stop", 16);
+        memory_region_add_subregion(isa_address_space_io(isa),
+                                    0x4e0 + (d->dshift << 4), &d->stop_io);
     }
 
     memory_region_init_io(&d->cont_io, OBJECT(isa), &cont_io_ops, d,
