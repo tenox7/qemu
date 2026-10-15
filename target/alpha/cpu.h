@@ -150,6 +150,7 @@ typedef struct CPUArchState {
     /* Composite state for the cycle counter. */
     uint64_t cc_ns_then;
     uint64_t cc_ticks_then;
+    uint64_t cc_ticks_read;
 
     /* Information associated with an exception about to be taken. */
     uint64_t excp_stats[EXCP_LAST];

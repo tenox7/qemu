@@ -439,14 +439,25 @@ static uint64_t cycle_counter_for_timestamp(CPUAlphaState *env, uint64_t now)
 static uint64_t cycle_counter_value(CPUAlphaState *env)
 {
     uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    return cycle_counter_for_timestamp(env, now);
+    uint64_t ticks = cycle_counter_for_timestamp(env, now);
+
+    /* Every read takes a cycle, however coarse the host clock is. */
+    if (cycle_counter_enabled(env) && ticks <= env->cc_ticks_read) {
+        ticks = env->cc_ticks_read + 1;
+    }
+    env->cc_ticks_read = ticks;
+    return ticks;
 }
 
 uint64_t alpha_read_cyclecounter(CPUAlphaState *env)
 {
     uint64_t cc = 0;
 
-    SET_FIELD(cc, CC, COUNTER, cycle_counter_value(env));
+    if (env->implver == IMPLVER_2106x) {
+        SET_FIELD(cc, CC, COUNTER_FULL, cycle_counter_value(env));
+    } else {
+        SET_FIELD(cc, CC, COUNTER, cycle_counter_value(env));
+    }
     SET_FIELD(cc, CC, OFFSET, cycle_counter_offset(env));
     return cc;
 }
@@ -1060,7 +1071,8 @@ static void cc_ctl_write(CPUAlphaState *env, const AlphaIPRegInfo *ri,
          */
         uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
-        env->cc_ticks_then = cycle_counter_for_timestamp(env, now);
+        env->cc_ticks_then = MAX(cycle_counter_for_timestamp(env, now),
+                                 env->cc_ticks_read);
         env->cc_ns_then = now;
     }
     env->ipr.cc_ctl = value & (R_CC_CTL_CC_ENA_MASK | R_CC_CTL_COUNTER_MASK);

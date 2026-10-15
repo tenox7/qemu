@@ -464,9 +464,11 @@ static void alpha_cpu_init_clock(AlphaCPU *cpu)
 
     /*
      * Trial and error have suggested that the PCC actually increments every
-     * 32 processor cycles.
+     * 32 processor cycles. The 21064 counts every cycle, as the Jensen SRM's
+     * delay loop (150000 per ms at 150 MHz) assumes.
      */
-    clock_set_mul_div(cpu->sysclk_div, 32, 1);
+    clock_set_mul_div(cpu->sysclk_div,
+                      cpu->isa_implver == IMPLVER_2106x ? 1 : 32, 1);
     clock_set_source(cpu->sysclk_div, cpu->refclk);
     clock_set_source(cpu->sysclk, cpu->sysclk_div);
 }

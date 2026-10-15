@@ -197,6 +197,7 @@ static int cpu_post_load(void *opaque, int version_id)
         return -1;
     }
 
+    env->cc_ticks_read = env->cc_ticks_then;
     alpha_rebuild_hflags(env);
     return 0;
 }
