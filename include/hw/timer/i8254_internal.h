@@ -68,6 +68,12 @@ struct PITCommonClass {
     void (*post_load)(PITCommonState *s);
 };
 
+/* modes 0 and 4 do not count while GATE is low */
+static inline bool pit_counting(PITChannelState *s)
+{
+    return s->gate || (s->mode != 0 && s->mode != 4);
+}
+
 int pit_get_out(PITChannelState *s, int64_t current_time);
 int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time);
 void pit_get_channel_info_common(PITCommonState *s, PITChannelState *sc,

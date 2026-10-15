@@ -52,11 +52,13 @@ static void pit_irq_timer_update(PITChannelState *s, int64_t current_time);
 
 static int pit_get_count(PITChannelState *s)
 {
-    uint64_t d;
+    uint64_t d = 0;
     int counter;
 
-    d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->count_load_time, PIT_FREQ,
-                 NANOSECONDS_PER_SECOND);
+    if (pit_counting(s)) {
+        d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->count_load_time,
+                     PIT_FREQ, NANOSECONDS_PER_SECOND);
+    }
     switch(s->mode) {
     case 0:
     case 1:
@@ -83,7 +85,14 @@ static void pit_set_channel_gate(PITCommonState *s, PITChannelState *sc,
     default:
     case 0:
     case 4:
-        /* XXX: just disable/enable counting */
+        if (sc->gate > val) {
+            int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+            sc->count = pit_get_out(sc, now) ? 0 : pit_get_count(sc);
+        } else if (sc->gate < val) {
+            sc->gate = val;
+            sc->count_load_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+            pit_irq_timer_update(sc, sc->count_load_time);
+        }
         break;
     case 1:
     case 5:
