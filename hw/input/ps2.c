@@ -47,9 +47,13 @@
 #define KBD_CMD_RESET_DISABLE   0xF5    /* reset and disable scanning */
 #define KBD_CMD_RESET_ENABLE    0xF6    /* reset and enable scanning */
 #define KBD_CMD_RESET           0xFF    /* Reset */
-#define KBD_CMD_SET_MAKE_BREAK  0xFC    /* Set Make and Break mode */
+#define KBD_CMD_SET_ALL_TYPEMATIC 0xF7  /* Set All Keys Typematic */
 #define KBD_CMD_SET_ALL_KEYS    0xF8    /* Set All Keys Make/Break */
+#define KBD_CMD_SET_ALL_MAKE    0xF9    /* Set All Keys Make */
 #define KBD_CMD_SET_TYPEMATIC   0xFA    /* Set Typematic Make and Break mode */
+#define KBD_CMD_SET_KEY_TYPEMATIC 0xFB  /* Set Key Type Typematic */
+#define KBD_CMD_SET_MAKE_BREAK  0xFC    /* Set Make and Break mode */
+#define KBD_CMD_SET_KEY_MAKE    0xFD    /* Set Key Type Make */
 
 /* Keyboard Replies */
 #define KBD_REPLY_POR       0xAA    /* Power on reset */
@@ -624,7 +628,9 @@ void ps2_write_keyboard(PS2KbdState *s, int val)
         case KBD_CMD_SCANCODE:
         case KBD_CMD_SET_LEDS:
         case KBD_CMD_SET_RATE:
+        case KBD_CMD_SET_KEY_TYPEMATIC:
         case KBD_CMD_SET_MAKE_BREAK:
+        case KBD_CMD_SET_KEY_MAKE:
         case KBD_CMD_SET_ALL_KEYS:
             ps2->write_cmd = val;
             ps2_cqueue_1(ps2, KBD_REPLY_ACK);
@@ -645,6 +651,8 @@ void ps2_write_keyboard(PS2KbdState *s, int val)
                          KBD_REPLY_ACK,
                          KBD_REPLY_POR);
             break;
+        case KBD_CMD_SET_ALL_TYPEMATIC:
+        case KBD_CMD_SET_ALL_MAKE:
         case KBD_CMD_SET_TYPEMATIC:
             ps2_cqueue_1(ps2, KBD_REPLY_ACK);
             break;
@@ -657,9 +665,16 @@ void ps2_write_keyboard(PS2KbdState *s, int val)
             break;
         }
         break;
+    case KBD_CMD_SET_KEY_TYPEMATIC:
     case KBD_CMD_SET_MAKE_BREAK:
+    case KBD_CMD_SET_KEY_MAKE:
+        /* Each set 3 scancode is acknowledged until the next command. */
+        if (val >= KBD_CMD_SET_LEDS) {
+            ps2->write_cmd = -1;
+            ps2_write_keyboard(s, val);
+            return;
+        }
         ps2_cqueue_1(ps2, KBD_REPLY_ACK);
-        ps2->write_cmd = -1;
         break;
     case KBD_CMD_SET_ALL_KEYS:
         ps2_cqueue_1(ps2, KBD_REPLY_ACK);
