@@ -678,12 +678,36 @@ static void s3_trio_enable_writeb(void *opaque, uint32_t addr, uint32_t val)
     trace_s3_vga_enable_writeb(addr, val);
 }
 
+/*
+ * The RAMDAC has one address register for reads and writes, read back
+ * at 3C8. Setting a read address prefetches that entry and increments
+ * it, and so does every third data access. OS/2 VVIDEO reads 3C9 until
+ * 3C8 changes to find the DAC state.
+ */
+static uint32_t s3_dac_read(S3TrioState *s, uint32_t addr)
+{
+    uint32_t val = vga_ioport_read(&s->vga, addr);
+
+    if (addr == VGA_PEL_D && !s->vga.dac_sub_index) {
+        s->vga.dac_write_index++;
+    }
+    return val;
+}
+
+static void s3_dac_write(S3TrioState *s, uint32_t addr, uint32_t val)
+{
+    vga_ioport_write(&s->vga, addr, val);
+    if (addr == VGA_PEL_IR) {
+        s->vga.dac_write_index = val + 1;
+    }
+}
+
 static uint32_t s3_trio_dac_ioport_readb(void *opaque, uint32_t addr)
 {
     S3TrioState *s = opaque;
     uint32_t val;
 
-    val = vga_ioport_read(&s->vga, addr - 0x2ea + VGA_PEL_MSK);
+    val = s3_dac_read(s, addr - 0x2ea + VGA_PEL_MSK);
     trace_s3_vga_dac_readb(addr, val);
     return val;
 }
@@ -692,7 +716,7 @@ static void s3_trio_dac_ioport_writeb(void *opaque, uint32_t addr, uint32_t val)
 {
     S3TrioState *s = opaque;
     trace_s3_vga_dac_writeb(addr, val);
-    vga_ioport_write(&s->vga, addr - 0x2ea + VGA_PEL_MSK, val);
+    s3_dac_write(s, addr - 0x2ea + VGA_PEL_MSK, val);
 }
 
 static uint16_t* s3_trio_get_register(S3TrioState *s, uint32_t addr, int is_write, uint32_t* val_if_write)
@@ -1040,12 +1064,14 @@ static uint32_t s3_trio_vga_ioport_read(void *opaque, uint32_t addr)
             break;
         }
         break;
+    case VGA_PEL_D:
+        val = s3_dac_read(s, addr);
+        break;
     default:
         val = vga_ioport_read(&s->vga, addr);
         break;
     }
 
-    trace_s3_vga_io_readb(addr, val);
     trace_s3_vga_io_readb(addr, val);
     return val;
 }
@@ -1159,6 +1185,9 @@ static void s3_trio_vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         default:
             break;
         }
+        break;
+    case VGA_PEL_IR:
+        s3_dac_write(s, addr, val);
         break;
     default:
         vga_ioport_write(&s->vga, addr, val);
