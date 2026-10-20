@@ -829,12 +829,33 @@ static uint32_t s3_trio_ioport_readb(void *opaque, uint32_t addr)
     return val;
 }
 
+/*
+ * BEE8 reads return the register picked by READ_SEL (index F) with its
+ * index in bits 15-12 and step READ_SEL; OS/2 VVIDEO reads until index E.
+ */
+static uint16_t s3_read_reg_data(S3TrioState *s)
+{
+    static const uint8_t index[] = { 0x0, 0x1, 0x2, 0x3, 0x4, 0xa, 0xe };
+    unsigned sel = s->mfc[0xf] & 0x7;
+
+    s->mfc[0xf] = (s->mfc[0xf] & ~0x7) | ((sel + 1) & 0x7);
+    if (sel >= ARRAY_SIZE(index)) {
+        return 0xffff;
+    }
+    return (index[sel] << 12) | (s->mfc[index[sel]] & 0xfff);
+}
+
 static uint32_t s3_trio_ioport_readw(void *opaque, uint32_t addr)
 {
     S3TrioState *s = opaque;
     uint32_t val;
     uint16_t *p;
 
+    if (addr == 0xbee8) {
+        val = s3_read_reg_data(s);
+        trace_s3_vga_io_readw(addr, val);
+        return val;
+    }
     if (addr & 0x2) {
         p = NULL;
     } else {
