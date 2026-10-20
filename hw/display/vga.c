@@ -1501,6 +1501,14 @@ static bool vga_scanline_invalidated(VGACommonState *s, int y)
     return s->invalidated_y_table[y >> 5] & (1 << (y & 0x1f));
 }
 
+void vga_set_bank_offset(VGACommonState *s, int32_t offset)
+{
+    if (s->bank_offset != offset) {
+        s->bank_offset = offset;
+        vga_update_memory_access(s);
+    }
+}
+
 void vga_dirty_log_start(VGACommonState *s)
 {
     memory_region_set_log(&s->vram, true, DIRTY_MEMORY_VGA);

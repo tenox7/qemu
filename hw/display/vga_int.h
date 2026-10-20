@@ -182,6 +182,7 @@ void vga_ioport_write(void *opaque, uint32_t addr, uint32_t val);
 uint32_t vga_mem_readb(VGACommonState *s, hwaddr addr);
 void vga_mem_writeb(VGACommonState *s, hwaddr addr, uint32_t val);
 void vga_invalidate_scanlines(VGACommonState *s, int y1, int y2);
+void vga_set_bank_offset(VGACommonState *s, int32_t offset);
 
 int vga_ioport_invalid(VGACommonState *s, uint32_t addr);
 

@@ -243,6 +243,21 @@ static void s3_trio_update_lfb(S3TrioState *s)
     memory_region_transaction_commit();
 }
 
+/*
+ * With CR31 bit 0 set, the A0000 window shows the 64 KB bank in CR6A.
+ * CR35 bits 3-0 and CR51 bits 3-2 write the low and high bank bits.
+ */
+static void s3_update_bank(S3TrioState *s)
+{
+    VGACommonState *v = &s->vga;
+    uint32_t off = 0;
+
+    if (v->cr[0x31] & 0x01) {
+        off = v->cr[0x6a] << (v->sr[VGA_SEQ_MEMORY_MODE] & VGA_SR04_CHN_4M ? 16 : 14);
+    }
+    vga_set_bank_offset(v, off & (v->vram_size - 1));
+}
+
 static inline int address_to_reg(uint32_t addr)
 {
     assert((addr & 0x3ff) == 0x2e8);
@@ -1151,6 +1166,21 @@ static void s3_trio_vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                 s->vga.ar_index |= 0x20;
             }
             break;
+        case 0x31:
+        case 0x6a:
+            vga_ioport_write(&s->vga, addr, val);
+            s3_update_bank(s);
+            break;
+        case 0x35:
+            vga_ioport_write(&s->vga, addr, val);
+            s->vga.cr[0x6a] = (s->vga.cr[0x6a] & ~0x0f) | (val & 0x0f);
+            s3_update_bank(s);
+            break;
+        case 0x51:
+            vga_ioport_write(&s->vga, addr, val);
+            s->vga.cr[0x6a] = (s->vga.cr[0x6a] & ~0x30) | ((val & 0x0c) << 2);
+            s3_update_bank(s);
+            break;
         case 0x55:
         {
             bool scl = val & 0x01;
@@ -1173,6 +1203,7 @@ static void s3_trio_vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         switch (s->vga.sr_index) {
         case 0x00 ... 0x07:
             vga_ioport_write(&s->vga, addr, val);
+            s3_update_bank(s);
             break;
         case 0x08:
             s->vga.sr[s->vga.sr_index] = val;
