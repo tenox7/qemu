@@ -452,42 +452,38 @@ static void s3_run_solid(S3TrioState *s)
     }
 }
 
+/*
+ * Both rectangles start at the given corners and run in the direction of
+ * INC_X and INC_Y, so overlapping copies to the right or down start at
+ * the bottom right.
+ */
 static void s3_do_cmd_blt(S3TrioState *s, bool pattern)
 {
     int width = s->maj_axis_pcnt + 1;
     int height = s->min_axis_pcnt + 1;
     int sx = s->cur_x, sy = s->cur_y;
     int dx = s->destx_diastp, dy = s->desty_axstep;
+    int xstep = s->cmd & CMD_INC_X ? 1 : -1;
+    int ystep = s->cmd & CMD_INC_Y ? 1 : -1;
     uint32_t pitch = s3_pitch(s);
-    int xstep = 1, ystep = 1, x0 = 0, y0 = 0;
     int mixsel = s->pix_cntl & PIX_CNTL_MIXSEL_MASK;
     int x, y;
 
-    if (!pattern) {
-        if (dx > sx) {
-            xstep = -1;
-            x0 = width - 1;
-        }
-        if (dy > sy) {
-            ystep = -1;
-            y0 = height - 1;
-        }
-    }
     for (y = 0; y < height; y++) {
-        int oy = y0 + y * ystep;
+        int oy = y * ystep;
 
         for (x = 0; x < width; x++) {
-            int ox = x0 + x * xstep;
-            uint32_t soff;
+            int ox = x * xstep;
+            int64_t soff;
             uint8_t src;
             bool fg = true;
 
             if (pattern) {
                 soff = (sy + ((dy + oy) & 7)) * pitch + sx + ((dx + ox) & 7);
             } else {
-                soff = (sy + oy) * pitch + sx + ox;
+                soff = (int64_t)(sy + oy) * pitch + sx + ox;
             }
-            if (soff >= s->vga.vram_size) {
+            if (soff < 0 || soff >= s->vga.vram_size) {
                 continue;
             }
             src = s->vga.vram_ptr[soff];
