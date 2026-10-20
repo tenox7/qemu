@@ -254,6 +254,19 @@ static inline void do_cmd_done(S3TrioState *s)
     s->gp_stat &= ~GP_STAT_BUSY;
 }
 
+/*
+ * The engine reads as idle while it waits for CPU pixel data: the OS/2
+ * 864 GRADD starts fully clipped transfers, sends nothing, then waits
+ * for idle.
+ */
+static uint16_t s3_gp_stat(S3TrioState *s)
+{
+    if (s->cmd & CMD_PCDATA) {
+        return s->gp_stat & ~GP_STAT_BUSY;
+    }
+    return s->gp_stat;
+}
+
 static uint32_t s3_pitch(S3TrioState *s)
 {
     uint32_t offset = s->vga.cr[0x13] | ((s->vga.cr[0x51] & 0x30) << 4);
@@ -742,7 +755,10 @@ static uint16_t* s3_trio_get_register(S3TrioState *s, uint32_t addr, int is_writ
         p = &s->err_term;
         break;
     case REG_MAJ_AXIS_PCNT:
-        p = is_write ? &s->maj_axis_pcnt : NULL;
+        if (is_write) {
+            p = &s->maj_axis_pcnt;
+            *val_if_write &= 0x0fff;
+        }
         break;
     case REG_GP_STAT: /* or REG_CMD */
         p = is_write ? &s->cmd : &s->gp_stat;
@@ -804,7 +820,7 @@ static uint32_t s3_trio_ioport_readb(void *opaque, uint32_t addr)
     }
 
     if (p) {
-        val = (*p >> ((~addr & 1) * 8)) & 0xff;
+        val = ((p == &s->gp_stat ? s3_gp_stat(s) : *p) >> ((~addr & 1) * 8)) & 0xff;
     } else {
         val = 0;
     }
@@ -825,7 +841,9 @@ static uint32_t s3_trio_ioport_readw(void *opaque, uint32_t addr)
         p = s3_trio_get_register(s, address_to_reg(addr), 0, NULL);
     }
 
-    if (p) {
+    if (p == &s->gp_stat) {
+        val = s3_gp_stat(s);
+    } else if (p) {
         val = *p;
     } else {
         val = 0;
