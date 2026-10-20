@@ -997,26 +997,19 @@ static uint32_t s3_trio_ioport_readl(void *opaque, uint32_t addr)
     return s3_trio_ioport_readw(opaque, addr);
 }
 
-static uint32_t s3_trio_alias_mono(uint32_t addr)
-{
-    switch (addr) {
-    case VGA_CRT_IM:
-        return VGA_CRT_IC;
-    case VGA_CRT_DM:
-        return VGA_CRT_DC;
-    case VGA_IS1_RM:
-        return VGA_IS1_RC;
-    default:
-        return addr;
-    }
-}
-
+/*
+ * The CRTC and status ports decode at 3Bx or 3Dx as selected by MSR bit 0,
+ * like any VGA. OS/2 VVIDEO takes an answer at 3B4 in color mode for a
+ * second, monochrome adapter and then skips the BIOS for DOS mode sets.
+ */
 static uint32_t s3_trio_vga_ioport_read(void *opaque, uint32_t addr)
 {
     S3TrioState *s = opaque;
     uint32_t val;
 
-    addr = s3_trio_alias_mono(addr);
+    if (vga_ioport_invalid(&s->vga, addr)) {
+        return 0xff;
+    }
 
     switch (addr) {
     case VGA_CRT_DM:
@@ -1096,7 +1089,9 @@ static void s3_trio_vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     S3TrioState *s = opaque;
 
     trace_s3_vga_io_writeb(addr, val);
-    addr = s3_trio_alias_mono(addr);
+    if (vga_ioport_invalid(&s->vga, addr)) {
+        return;
+    }
 
     switch (addr) {
     case VGA_CRT_DM:
