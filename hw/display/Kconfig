@@ -53,6 +53,11 @@ config VGA_ISA
     depends on ISA_BUS
     select VGA
 
+config S3_928
+    bool
+    depends on ISA_BUS
+    select VGA
+
 config VGA_MMIO
     bool
     select VGA

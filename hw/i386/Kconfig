@@ -94,6 +94,7 @@ config ISAPC
     default y
     depends on I386
     imply VGA_ISA
+    imply S3_928
     select ISA_BUS
     select PC
     select IDE_ISA

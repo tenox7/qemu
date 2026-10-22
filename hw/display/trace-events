@@ -226,3 +226,12 @@ apple_gfx_iosfc_unmap_memory(void *a, void *b, void *c, void *d, void *e, void *
 apple_gfx_iosfc_unmap_memory_region(void* mem, void *region) "unmapping @ %p from memory region %p"
 apple_gfx_iosfc_raise_irq(uint32_t vector) "vector=0x%x"
 
+
+# s3_928.c
+s3_928_cr(unsigned index, unsigned value, bool write) "index=0x%02x value=0x%02x write=%d"
+s3_928_io(unsigned port, uint64_t value, unsigned size, bool write) "port=0x%04x value=0x%" PRIx64 " size=%u write=%d"
+s3_928_command(unsigned cmd, unsigned x, unsigned y, unsigned width, unsigned height) "cmd=0x%04x xy=%u,%u size=%u,%u"
+s3_928_state(unsigned cmd, unsigned sx, unsigned sy, unsigned dx, unsigned dy, unsigned width, unsigned height, unsigned pixel, unsigned mixes, unsigned format_mask) "cmd=0x%04x src=%u,%u dst=%u,%u size=%u,%u pix=0x%03x mixes=0x%08x format_mask=0x%08x"
+s3_928_dac(unsigned index, unsigned value) "index=%u value=0x%02x"
+s3_928_vga_io(unsigned port, unsigned value) "port=0x%04x value=0x%02x"
+s3_928_memory(unsigned addr, unsigned value, bool write) "addr=0x%06x value=0x%02x write=%d"
