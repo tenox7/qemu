@@ -11,7 +11,8 @@
  * keyboard port at 0x50, the mouse port at 0x48 and the tablet port, a
  * 16550 at 0x70 with no tablet attached, share interrupt level 1. Bit 7 of
  * POS register 2 resets the mouse port and bit 5 the tablet port, whose CTS
- * input senses the keyboard and mouse fuse (clear while it is good).
+ * input senses the keyboard and mouse fuse (clear while it is good). The
+ * parallel port at 0x78 is the PC kind, on interrupt level 13.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -20,11 +21,13 @@
 #include "qemu/timer.h"
 #include "qapi/error.h"
 #include "hw/char/serial.h"
+#include "hw/char/parallel.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/isa/isa.h"
 #include "system/reset.h"
+#include "system/system.h"
 #include "hw/ppc/rs6k_iocc.h"
 #include "hw/ppc/rs6k_sio.h"
 #include "hw/ppc/rs6k_kbd.h"
@@ -45,6 +48,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(Rs6kSIOState, RS6K_SIO)
 #define SIO_KBD_LEVEL   1
 #define SIO_MSE_ADDR    0x48
 #define SIO_TABLET_ADDR 0x70
+#define SIO_PP_ADDR     0x78
+#define SIO_PP_LEVEL    13
 #define SIO_POS_RESET   2
 #define SIO_RESET_MSE   0x80
 #define SIO_RESET_TABLET 0x20
@@ -319,6 +324,9 @@ static void rs6k_sio_realize(DeviceState *dev, Error **errp)
     s->dma_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sio_dma_tick, s);
     rs6k_sio_realize_fdc(s, errp);
     rs6k_sio_realize_input(s, errp);
+    parallel_mm_init(&s->iocc->bus_io, SIO_PP_ADDR, 0,
+                     qdev_get_gpio_in(DEVICE(s->iocc), SIO_PP_LEVEL),
+                     parallel_hds[0]);
     rs6k_iocc_set_slot(s->iocc, SIO_SLOT, SIO_ID, sio_pos_write, s);
 }
 

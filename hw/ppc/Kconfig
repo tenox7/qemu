@@ -125,6 +125,7 @@ config RS6K
     default y
     depends on PPC
     select SERIAL
+    select PARALLEL
     select FDC_SYSBUS
     select ISA_BUS
     select PCI
