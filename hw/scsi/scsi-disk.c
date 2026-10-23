@@ -1685,7 +1685,11 @@ static void scsi_disk_emulate_mode_select(SCSIDiskReq *r, uint8_t *inbuf)
          * size of 256 since we cannot handle anything below BDRV_SECTOR_SIZE.
          */
         if (bs && !(bs & ~0xfe00) && bs != s->qdev.blocksize) {
+            uint64_t nb_sectors;
+
             s->qdev.blocksize = bs;
+            blk_get_geometry(s->qdev.conf.blk, &nb_sectors);
+            s->qdev.max_lba = MAX(nb_sectors / (bs / BDRV_SECTOR_SIZE), 1) - 1;
             trace_scsi_disk_mode_select_set_blocksize(s->qdev.blocksize);
         }
     }
