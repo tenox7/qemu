@@ -193,3 +193,11 @@ rs6k_sec_read(uint64_t addr, uint32_t val) "0x%02" PRIx64 " -> 0x%08x"
 rs6k_sec_write(uint64_t addr, uint64_t val) "0x%02" PRIx64 " = 0x%08" PRIx64
 rs6k_buc_read(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " -> 0x%" PRIx64
 rs6k_buc_write(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " = 0x%" PRIx64
+
+# rs6k_kbd.c
+rs6k_kbd_read(uint64_t addr, uint64_t val) "+0x%" PRIx64 " -> 0x%02" PRIx64
+rs6k_kbd_write(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size %u = 0x%04" PRIx64
+
+# rs6k_mse.c
+rs6k_mse_read(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size %u -> 0x%08" PRIx64
+rs6k_mse_write(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size %u = 0x%04" PRIx64

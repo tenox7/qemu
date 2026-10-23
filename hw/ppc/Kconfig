@@ -131,6 +131,8 @@ config RS6K
     select LSI_SCSI_PCI
     select MC146818RTC
     select I82596_COMMON
+    select PS2
+    select OR_IRQ
 
 config MAC_OLDWORLD
     bool

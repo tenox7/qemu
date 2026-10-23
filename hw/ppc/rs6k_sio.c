@@ -6,7 +6,10 @@
  * port n). A port can feed its transmitter by third-party DMA: writing 0x40
  * sets the arbitration level and bit n of 0x41 enables DMA for port n.
  * The 82077 floppy controller at 0x60 interrupts on level 6 and does DMA on
- * arbitration level 0, through the ISA DMA interface of this device.
+ * arbitration level 0, through the ISA DMA interface of this device. The
+ * keyboard port at 0x50, the mouse port at 0x48 and the tablet port, a
+ * 16550 at 0x70 with no tablet attached, share interrupt level 1; bit 7 of
+ * POS register 2 resets the mouse port.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -19,8 +22,12 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/isa/isa.h"
+#include "system/reset.h"
 #include "hw/ppc/rs6k_iocc.h"
 #include "hw/ppc/rs6k_sio.h"
+#include "hw/ppc/rs6k_kbd.h"
+#include "hw/ppc/rs6k_mse.h"
+#include "hw/core/or-irq.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(Rs6kSIOState, RS6K_SIO)
 
@@ -31,6 +38,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(Rs6kSIOState, RS6K_SIO)
 #define SIO_FDC_ADDR    0x60
 #define SIO_FDC_LEVEL   6
 #define SIO_FDC_ARB     0
+#define SIO_KBD_ADDR    0x50
+#define SIO_KBD_LEVEL   1
+#define SIO_MSE_ADDR    0x48
+#define SIO_TABLET_ADDR 0x70
+#define SIO_POS_RESET   2
+#define SIO_RESET_MSE   0x80
 #define SIO_UARTS       2
 #define UART_LSR_THRE   0x20
 
@@ -52,6 +65,10 @@ struct Rs6kSIOState {
     void *fdc_opaque;
     bool fdc_dreq;
     QEMUTimer *fdc_timer;
+    DeviceState *kbd;
+    DeviceState *mse;
+    OrIRQState kbd_irq;
+    SerialState tablet;
 };
 
 static void sio_uart_irq(void *opaque, int n, int level)
@@ -214,6 +231,59 @@ static void rs6k_sio_realize_fdc(Rs6kSIOState *s, Error **errp)
     s->fdc_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sio_fdc_dma_run, s);
 }
 
+static DeviceState *sio_input_port(Rs6kSIOState *s, const char *type,
+                                   const char *name, hwaddr addr, int line,
+                                   MemoryRegion *(*io)(DeviceState *),
+                                   Error **errp)
+{
+    DeviceState *dev = qdev_new(type);
+
+    object_property_add_child(OBJECT(s), name, OBJECT(dev));
+    if (!qdev_realize_and_unref(dev, NULL, errp)) {
+        return NULL;
+    }
+    qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(DEVICE(&s->kbd_irq), line));
+    memory_region_add_subregion(&s->iocc->bus_io, addr, io(dev));
+    qemu_register_resettable(OBJECT(dev));
+    return dev;
+}
+
+/* The keyboard and mouse ports share their interrupt level */
+static void rs6k_sio_realize_input(Rs6kSIOState *s, Error **errp)
+{
+    object_initialize_child(OBJECT(s), "kbd-irq", &s->kbd_irq, TYPE_OR_IRQ);
+    qdev_prop_set_uint16(DEVICE(&s->kbd_irq), "num-lines", 3);
+    if (!qdev_realize(DEVICE(&s->kbd_irq), NULL, errp)) {
+        return;
+    }
+    qdev_connect_gpio_out(DEVICE(&s->kbd_irq), 0,
+                          qdev_get_gpio_in(DEVICE(s->iocc), SIO_KBD_LEVEL));
+    s->kbd = sio_input_port(s, TYPE_RS6K_KBD, "kbd", SIO_KBD_ADDR, 0,
+                            rs6k_kbd_io, errp);
+    if (!s->kbd) {
+        return;
+    }
+    s->mse = sio_input_port(s, TYPE_RS6K_MSE, "mse", SIO_MSE_ADDR, 1,
+                            rs6k_mse_io, errp);
+    s->tablet.irq = qdev_get_gpio_in(DEVICE(&s->kbd_irq), 2);
+    if (!qdev_realize(DEVICE(&s->tablet), NULL, errp)) {
+        return;
+    }
+    memory_region_init_io(&s->tablet.io, OBJECT(s), &serial_io_ops, &s->tablet,
+                          "sio.tablet", 8);
+    memory_region_add_subregion(&s->iocc->bus_io, SIO_TABLET_ADDR,
+                                &s->tablet.io);
+}
+
+static void sio_pos_write(void *opaque, int reg, uint8_t val)
+{
+    Rs6kSIOState *s = opaque;
+
+    if (reg == SIO_POS_RESET) {
+        rs6k_mse_set_reset(s->mse, val & SIO_RESET_MSE);
+    }
+}
+
 static void rs6k_sio_realize(DeviceState *dev, Error **errp)
 {
     Rs6kSIOState *s = RS6K_SIO(dev);
@@ -238,7 +308,8 @@ static void rs6k_sio_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->iocc->bus_io, SIO_DMA_ADDR, &s->dma_io);
     s->dma_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sio_dma_tick, s);
     rs6k_sio_realize_fdc(s, errp);
-    rs6k_iocc_set_slot(s->iocc, SIO_SLOT, SIO_ID, NULL, s);
+    rs6k_sio_realize_input(s, errp);
+    rs6k_iocc_set_slot(s->iocc, SIO_SLOT, SIO_ID, sio_pos_write, s);
 }
 
 static void rs6k_sio_init(Object *obj)
@@ -253,6 +324,7 @@ static void rs6k_sio_init(Object *obj)
         qdev_prop_set_uint32(DEVICE(&s->uart[i]), "baudbase", 8000000 / 16);
         object_property_add_alias(obj, chr, OBJECT(&s->uart[i]), "chardev");
     }
+    object_initialize_child(obj, "tablet", &s->tablet, TYPE_SERIAL);
 }
 
 static const Property rs6k_sio_properties[] = {
