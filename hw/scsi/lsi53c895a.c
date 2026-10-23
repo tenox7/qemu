@@ -1064,8 +1064,12 @@ static void lsi_do_msgout(LSIState *s)
             trace_lsi_do_msgout_extended(msg, len);
             switch (msg) {
             case 1:
+                /* targets are asynchronous: reject the negotiation */
                 trace_lsi_do_msgout_ignored("SDTR");
                 lsi_skip_msgbytes(s, 2);
+                lsi_set_phase(s, PHASE_MI);
+                lsi_add_msg_byte(s, 7); /* MESSAGE REJECT */
+                s->msg_action = LSI_MSG_ACTION_COMMAND;
                 break;
             case 3:
                 trace_lsi_do_msgout_ignored("WDTR");
