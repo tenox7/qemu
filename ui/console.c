@@ -1217,6 +1217,9 @@ QemuConsole *qemu_console_lookup_by_device(DeviceState *dev, uint32_t head)
     uint32_t h;
 
     QTAILQ_FOREACH(con, &consoles, next) {
+        if (!QEMU_IS_GRAPHIC_CONSOLE(con)) {
+            continue;
+        }
         obj = object_property_get_link(OBJECT(con),
                                        "device", &error_abort);
         if (DEVICE(obj) != dev) {
