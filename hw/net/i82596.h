@@ -76,6 +76,7 @@ struct I82596State_st {
 
     hwaddr current_tx_desc;
     hwaddr current_rx_desc;
+    hwaddr next_rbd;            /* free RBD the RU holds on to */
     uint32_t last_good_rfa;
     uint8_t packet_queue[PACKET_QUEUE_SIZE][PKT_BUF_SZ];
     size_t packet_queue_len[PACKET_QUEUE_SIZE];

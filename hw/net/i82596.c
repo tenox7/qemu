@@ -301,6 +301,7 @@ static void i82596_s_reset(I82596State *s)
     s->cu_status = CU_IDLE;
     s->rx_status = RX_IDLE;
     s->cmd_p = I596_NULL;
+    s->next_rbd = I596_NULL;
     s->lnkst = 0x8000;
     s->ca = s->ca_active = 0;
     s->send_irq = 0;
@@ -524,6 +525,14 @@ static void i82596_rbd_write(I82596State *s, hwaddr addr,
     set_uint32(s, addr + 0x4, rbd->next_rbd_addr);
     set_uint32(s, addr + 0x8, rbd->buffer_addr);
     set_uint16(s, addr + 0xC, rbd->size);
+}
+
+/* The RFD the RU holds for the next frame reads busy */
+static void i82596_hold_rfd(I82596State *s, hwaddr rfd)
+{
+    if (!(get_uint16(s, rfd) & STAT_C)) {
+        set_uint16(s, rfd, STAT_B);
+    }
 }
 
 static int i82596_tx_copy_buffers(I82596State *s, hwaddr tfd_addr,
@@ -993,6 +1002,7 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
     size_t frame_size = size;
     size_t payload_size = 0;
     size_t bytes_copied = 0;
+    size_t rfd_count = 0;
     const uint8_t *packet_data = buf;
     bool out_of_resources = false;
     size_t crc_size = i82596_get_crc_size(s);
@@ -1066,6 +1076,7 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
             if (payload_size > 0) {
                 bytes_copied = i82596_rx_copy_to_rfd(s, rfd_addr, packet_data,
                                                       payload_size, rfd_size);
+                rfd_count = bytes_copied;
             }
 
             i82596_rx_store_frame_header(s, &rfd, packet_data, frame_size);
@@ -1084,11 +1095,16 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
                                     packet_data + bytes_copied,
                                     rfd_frame_size);
                 bytes_copied += rfd_frame_size;
+                rfd_count += rfd_frame_size;
             }
 
             if (bytes_copied < payload_size) {
                 size_t remaining = payload_size - bytes_copied;
                 rbd_addr = i82596_translate_address(s, rfd.rbd_addr, false);
+                /* the CPU may clear the pointer once the RU has fetched it */
+                if (rbd_addr == I596_NULL || rbd_addr == 0) {
+                    rbd_addr = s->next_rbd;
+                }
 
                 if (rbd_addr == I596_NULL || rbd_addr == 0) {
                     rx_status |= RFD_STATUS_TRUNC | RFD_STATUS_NOBUFS;
@@ -1104,6 +1120,7 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
                                             &out_of_resources,
                                             &remaining_rbd);
                     bytes_copied += rbd_bytes;
+                    s->next_rbd = remaining_rbd;
 
                     uint32_t next_rfd = i82596_translate_address(s, rfd.link,
                                                                   false);
@@ -1168,8 +1185,8 @@ rx_complete:
     }
 
     rfd.status_bits = rx_status & ~STAT_B;
-    rfd.actual_count = (bytes_copied & 0x3FFF) | 0x4000;
-    if (packet_completed) {
+    rfd.actual_count = (rfd_count & 0x3FFF) | 0x4000;
+    if (packet_completed && rfd_count == bytes_copied) {
         rfd.actual_count |= I596_EOF;
     }
 
@@ -1189,6 +1206,7 @@ rx_complete:
         uint32_t next_rfd_addr = i82596_translate_address(s, rfd.link, false);
         if (next_rfd_addr != 0 && next_rfd_addr != I596_NULL) {
             set_uint32(s, s->scb + 8, next_rfd_addr);
+            i82596_hold_rfd(s, next_rfd_addr);
         }
 
         s->scb_status |= SCB_STATUS_FR;
@@ -1650,7 +1668,7 @@ static void i82596_update_cu_status(I82596State *s, uint16_t cmd_status,
 static void update_scb_status(I82596State *s)
 {
     s->scb_status = (s->scb_status & 0xf000)
-        | (s->cu_status << 8) | (s->rx_status << 4) | (s->lnkst >> 8);
+        | (s->cu_status << 8) | (s->rx_status << 4);
     set_uint16(s, s->scb, s->scb_status);
 
     set_uint32(s, s->scb + 28, s->tx_aborted_errors);
@@ -1850,6 +1868,7 @@ static void examine_scb(I82596State *s)
                 hwaddr rbd = i82596_translate_address(s, test_rfd.rbd_addr,
                                                       false);
                 if (rbd != I596_NULL && rbd != 0) {
+                    s->next_rbd = rbd;
                     first_usable_rfd = test_rfd_addr;
                     first_usable_rfd_log = test_rfd_log;
                     found = true;
@@ -1865,6 +1884,7 @@ static void examine_scb(I82596State *s)
             s->current_rx_desc = first_usable_rfd;
             s->last_good_rfa = first_usable_rfd_log;
             i82596_update_rx_state(s, RX_READY);
+            i82596_hold_rfd(s, first_usable_rfd);
 
             if (first_usable_rfd != rfd) {
                 set_uint32(s, s->scb + 8, first_usable_rfd_log);
