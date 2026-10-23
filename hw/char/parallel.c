@@ -102,7 +102,8 @@ parallel_ioport_write_sw(void *opaque, uint32_t addr, uint32_t val)
             s->status |= PARA_STS_ONLINE;
             s->status |= PARA_STS_ERROR;
         }
-        else if (val & PARA_CTR_SELECT) {
+        /* printers take the strobed byte with or without Select In */
+        else {
             if (val & PARA_CTR_STROBE) {
                 s->status &= ~PARA_STS_BUSY;
                 if ((s->control & PARA_CTR_STROBE) == 0)
