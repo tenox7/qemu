@@ -2,9 +2,10 @@
  * IBM RS/6000 7006 standard I/O planar ("Rainbow" SIO, MCA id 0xf6fe)
  *
  * Two 16550 serial ports at I/O 0x30 and 0x38 with an 8 MHz clock share
- * interrupt level 2; reading 0x40 shows which port interrupts (bit n for
- * port n). A port can feed its transmitter by third-party DMA: writing 0x40
- * sets the arbitration level and bit n of 0x41 enables DMA for port n.
+ * interrupt level 2; reading 0x40 shows which port interrupts (bit 2n for
+ * port n, whose odd neighbour is not emulated). A port can feed its
+ * transmitter by third-party DMA: writing 0x40 sets the arbitration level
+ * and bit n of 0x41 enables DMA for port n.
  * The 82077 floppy controller at 0x60 interrupts on level 6 and does DMA on
  * arbitration level 0, through the ISA DMA interface of this device. The
  * keyboard port at 0x50, the mouse port at 0x48 and the tablet port, a
@@ -28,6 +29,7 @@
 #include "hw/ppc/rs6k_kbd.h"
 #include "hw/ppc/rs6k_mse.h"
 #include "hw/core/or-irq.h"
+#include "trace.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(Rs6kSIOState, RS6K_SIO)
 
@@ -75,7 +77,7 @@ static void sio_uart_irq(void *opaque, int n, int level)
 {
     Rs6kSIOState *s = opaque;
 
-    s->uart_irq = deposit32(s->uart_irq, n, 1, level != 0);
+    s->uart_irq = deposit32(s->uart_irq, 2 * n, 1, level != 0);
     qemu_set_irq(s->irq, s->uart_irq != 0);
 }
 
@@ -108,8 +110,10 @@ static void sio_dma_tick(void *opaque)
 static uint64_t sio_dma_read(void *opaque, hwaddr addr, unsigned size)
 {
     Rs6kSIOState *s = opaque;
+    uint64_t val = addr ? s->dma_ctl : s->uart_irq;
 
-    return addr ? s->dma_ctl : s->uart_irq;
+    trace_rs6k_sio_dma_read(addr, val);
+    return val;
 }
 
 static void sio_dma_write(void *opaque, hwaddr addr, uint64_t val,
@@ -117,6 +121,7 @@ static void sio_dma_write(void *opaque, hwaddr addr, uint64_t val,
 {
     Rs6kSIOState *s = opaque;
 
+    trace_rs6k_sio_dma_write(addr, val);
     if (!addr) {
         s->dma_arb = val;
         return;

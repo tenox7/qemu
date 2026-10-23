@@ -177,6 +177,10 @@ ppc4xx_sdram_unmap(uint64_t addr, uint64_t size) "Unmap RAM area 0x%" PRIx64 " s
 ppc4xx_sdram_map(uint64_t addr, uint64_t size) "Map RAM area 0x%" PRIx64 " size 0x%" PRIx64
 ppc4xx_sdram_init(uint64_t base, uint64_t size, uint32_t bcr) "Init RAM area 0x%" PRIx64 " size 0x%" PRIx64 " bcr 0x%x"
 
+# rs6k_sio.c
+rs6k_sio_dma_read(uint64_t addr, uint64_t val) "0x%" PRIx64 " -> 0x%02" PRIx64
+rs6k_sio_dma_write(uint64_t addr, uint64_t val) "0x%" PRIx64 " = 0x%02" PRIx64
+
 # rs6k_iocc.c
 rs6k_iocc_reg_read(uint32_t addr, uint32_t val) "0x%05x -> 0x%08x"
 rs6k_iocc_reg_write(uint32_t addr, uint64_t val) "0x%05x = 0x%08" PRIx64
