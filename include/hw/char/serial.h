@@ -47,6 +47,7 @@ struct SerialState {
     uint8_t mcr;
     uint8_t lsr; /* read only */
     uint8_t msr; /* read only */
+    uint8_t modem_inputs; /* MSR input levels when the backend has none */
     uint8_t scr;
     uint8_t fcr;
     uint8_t fcr_vmstate; /* we can't write directly this value
@@ -81,6 +82,8 @@ struct SerialState {
 
 extern const VMStateDescription vmstate_serial;
 extern const MemoryRegionOps serial_io_ops;
+
+void serial_reset(void *opaque);
 
 #define TYPE_SERIAL "serial"
 OBJECT_DECLARE_SIMPLE_TYPE(SerialState, SERIAL)

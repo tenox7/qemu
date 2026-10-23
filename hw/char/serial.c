@@ -467,8 +467,7 @@ static void serial_ioport_write(void *opaque, hwaddr addr, uint64_t val,
             if (old_mcr & UART_MCR_LOOP) {
                 /* the modem status inputs follow the line again */
                 if (s->poll_msl < 0) {
-                    serial_set_msr_inputs(s, UART_MSR_DCD | UART_MSR_DSR |
-                                             UART_MSR_CTS);
+                    serial_set_msr_inputs(s, s->modem_inputs);
                 } else {
                     serial_update_msl(s);
                 }
@@ -870,7 +869,7 @@ const VMStateDescription vmstate_serial = {
     }
 };
 
-static void serial_reset(void *opaque)
+void serial_reset(void *opaque)
 {
     SerialState *s = opaque;
     g_clear_handle_id(&s->watch_tag, g_source_remove);
@@ -880,7 +879,7 @@ static void serial_reset(void *opaque)
     s->iir = UART_IIR_NO_INT;
     s->lcr = 0;
     s->lsr = UART_LSR_TEMT | UART_LSR_THRE;
-    s->msr = UART_MSR_DCD | UART_MSR_DSR | UART_MSR_CTS;
+    s->msr = s->modem_inputs;
     /* Default to 9600 baud, 1 start bit, 8 data bits, 1 stop bit, no parity. */
     s->divider = 0x0C;
     s->mcr = UART_MCR_OUT2;
@@ -983,6 +982,8 @@ static const Property serial_properties[] = {
     DEFINE_PROP_CHR("chardev", SerialState, chr),
     DEFINE_PROP_UINT32("baudbase", SerialState, baudbase, 115200),
     DEFINE_PROP_BOOL("wakeup", SerialState, wakeup, false),
+    DEFINE_PROP_UINT8("modem-inputs", SerialState, modem_inputs,
+                      UART_MSR_DCD | UART_MSR_DSR | UART_MSR_CTS),
 };
 
 static void serial_class_init(ObjectClass *klass, const void *data)
