@@ -35,7 +35,7 @@ struct PanelState {
     QemuConsole *con;
     QemuInputHandlerState *input;
     Notifier machine_done;
-    int pointer_x;
+    int pointer_x, pointer_y;
     bool click;
     bool redraw;
 };
@@ -102,6 +102,12 @@ static const int key_dir[][2] = {
     [RS6K_KEY_SECURE] = { -190, -172 },
     [RS6K_KEY_SERVICE] = { 190, -172 },
     [RS6K_KEY_NORMAL] = { 0, -256 },
+};
+
+static const char *const panel_arrow[] = {
+    "X", "XX", "X.X", "X..X", "X...X", "X....X", "X.....X", "X......X",
+    "X.......X", "X........X", "X.....XXXXX", "X..X..X", "X.X X..X",
+    "XX  X..X", "X    X..X", "     X..X", "      XX",
 };
 
 unsigned rs6k_panel_key(DeviceState *dev)
@@ -184,6 +190,28 @@ static void panel_draw_key(PanelState *s, uint32_t *fb)
     }
 }
 
+/*
+ * The UI hides the host pointer over a window with absolute input and
+ * shows it again once the pointer reaches the edge, so draw one inside.
+ */
+static void panel_draw_pointer(PanelState *s, uint32_t *fb)
+{
+    int x = s->pointer_x, y = s->pointer_y;
+
+    if (x <= 0 || y <= 0 || x >= PANEL_W - 1 || y >= PANEL_H - 1) {
+        return;
+    }
+    for (unsigned j = 0; j < ARRAY_SIZE(panel_arrow) && y + j < PANEL_H; j++) {
+        for (unsigned i = 0; panel_arrow[j][i] && x + i < PANEL_W; i++) {
+            char c = panel_arrow[j][i];
+
+            if (c != ' ') {
+                fb[(y + j) * PANEL_W + x + i] = c == 'X' ? 0 : 0xffffff;
+            }
+        }
+    }
+}
+
 static void panel_draw(PanelState *s, uint32_t *fb)
 {
     panel_fill(fb, 0, 0, PANEL_W, PANEL_H, COL_CASE);
@@ -209,6 +237,7 @@ static void panel_draw(PanelState *s, uint32_t *fb)
                    LABEL_Y, name, k == s->key ? COL_LABEL_ON : COL_LABEL);
     }
     panel_draw_key(s, fb);
+    panel_draw_pointer(s, fb);
 }
 
 static bool panel_update_display(void *opaque)
@@ -246,15 +275,23 @@ static void panel_turn_key(PanelState *s, unsigned key)
     s->redraw = true;
 }
 
+static int panel_axis(int value, int size)
+{
+    return qemu_input_scale_axis(value, INPUT_EVENT_ABS_MIN,
+                                 INPUT_EVENT_ABS_MAX, 0, size);
+}
+
 static void panel_input_event(DeviceState *dev, QemuConsole *src,
                               QemuInputEvent *evt)
 {
     PanelState *s = RS6K_PANEL(dev);
 
     if (evt->type == INPUT_EVENT_KIND_ABS && evt->abs.axis == INPUT_AXIS_X) {
-        s->pointer_x = qemu_input_scale_axis(evt->abs.value,
-                                             INPUT_EVENT_ABS_MIN,
-                                             INPUT_EVENT_ABS_MAX, 0, PANEL_W);
+        s->pointer_x = panel_axis(evt->abs.value, PANEL_W);
+        s->redraw = true;
+    } else if (evt->type == INPUT_EVENT_KIND_ABS) {
+        s->pointer_y = panel_axis(evt->abs.value, PANEL_H);
+        s->redraw = true;
     } else if (evt->type == INPUT_EVENT_KIND_BTN &&
                evt->btn.button == INPUT_BUTTON_LEFT && evt->btn.down) {
         s->click = true;
