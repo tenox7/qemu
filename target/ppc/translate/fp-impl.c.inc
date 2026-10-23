@@ -9,10 +9,27 @@ static inline void gen_reset_fpstatus(void)
     gen_helper_reset_fpstatus(tcg_env);
 }
 
-static inline void gen_compute_fprf_float64(TCGv_i64 arg)
+/* frsp and the opcode 59 arithmetic classify their result as a single */
+static void gen_compute_fprf(DisasContext *ctx, TCGv_i64 arg)
 {
-    gen_helper_compute_fprf_float64(tcg_env, arg);
+    if (ctx->opcode >> 26 == 59 || (ctx->opcode & 0xfc0007fe) == 0xfc000018) {
+        gen_helper_compute_fprf_float64r32(tcg_env, arg);
+    } else {
+        gen_helper_compute_fprf_float64(tcg_env, arg);
+    }
     gen_helper_float_check_status(tcg_env);
+}
+
+/* An enabled invalid operation or zero divide leaves the target unchanged */
+static void gen_set_fpr_result(int rt, TCGv_i64 val)
+{
+    TCGv_i64 old = tcg_temp_new_i64();
+    TCGv_i64 keep = tcg_temp_new_i64();
+
+    get_fpr(old, rt);
+    tcg_gen_ld8u_i64(keep, tcg_env, offsetof(CPUPPCState, fp_keep_target));
+    tcg_gen_movcond_i64(TCG_COND_NE, val, keep, tcg_constant_i64(0), old, val);
+    set_fpr(rt, val);
 }
 
 #if defined(TARGET_PPC64)
@@ -46,8 +63,8 @@ static bool do_helper_acb(DisasContext *ctx, arg_A *a,
     get_fpr(t1, a->frc);
     get_fpr(t2, a->frb);
     helper(t3, tcg_env, t0, t1, t2);
-    set_fpr(a->frt, t3);
-    gen_compute_fprf_float64(t3);
+    gen_set_fpr_result(a->frt, t3);
+    gen_compute_fprf(ctx, t3);
     if (unlikely(a->rc)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -68,8 +85,8 @@ static bool do_helper_ab(DisasContext *ctx, arg_A_tab *a,
     get_fpr(t0, a->fra);
     get_fpr(t1, a->frb);
     helper(t2, tcg_env, t0, t1);
-    set_fpr(a->frt, t2);
-    gen_compute_fprf_float64(t2);
+    gen_set_fpr_result(a->frt, t2);
+    gen_compute_fprf(ctx, t2);
     if (unlikely(a->rc)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -90,8 +107,8 @@ static bool do_helper_ac(DisasContext *ctx, arg_A_tac *a,
     get_fpr(t0, a->fra);
     get_fpr(t1, a->frc);
     helper(t2, tcg_env, t0, t1);
-    set_fpr(a->frt, t2);
-    gen_compute_fprf_float64(t2);
+    gen_set_fpr_result(a->frt, t2);
+    gen_compute_fprf(ctx, t2);
     if (unlikely(a->rc)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -109,11 +126,12 @@ static bool do_round_convert(DisasContext *ctx, arg_X_tb_rc *a,
     gen_reset_fpstatus();
     get_fpr(t0, a->rb);
     helper(t1, tcg_env, t0);
-    set_fpr(a->rt, t1);
+    gen_set_fpr_result(a->rt, t1);
     if (set_fprf) {
-        gen_helper_compute_fprf_float64(tcg_env, t1);
+        gen_compute_fprf(ctx, t1);
+    } else {
+        gen_helper_float_check_status(tcg_env);
     }
-    gen_helper_float_check_status(tcg_env);
     if (unlikely(a->rc)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -130,8 +148,8 @@ static bool do_helper_bs(DisasContext *ctx, arg_A_tb *a,
     gen_reset_fpstatus();
     get_fpr(t0, a->frb);
     helper(t1, tcg_env, t0);
-    set_fpr(a->frt, t1);
-    gen_compute_fprf_float64(t1);
+    gen_set_fpr_result(a->frt, t1);
+    gen_compute_fprf(ctx, t1);
     if (unlikely(a->rc)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -175,8 +193,8 @@ static bool do_helper_fsqrt(DisasContext *ctx, arg_A_tb *a,
     gen_reset_fpstatus();
     get_fpr(t0, a->frb);
     helper(t1, tcg_env, t0);
-    set_fpr(a->frt, t1);
-    gen_compute_fprf_float64(t1);
+    gen_set_fpr_result(a->frt, t1);
+    gen_compute_fprf(ctx, t1);
     if (unlikely(a->rc != 0)) {
         gen_set_cr1_from_fpscr(ctx);
     }
@@ -272,7 +290,6 @@ static bool do_helper_cmp(DisasContext *ctx, arg_X_bf *a,
     get_fpr(t0, a->ra);
     get_fpr(t1, a->rb);
     helper(tcg_env, t0, t1, crf);
-    gen_helper_float_check_status(tcg_env);
     return true;
 }
 
@@ -443,10 +460,17 @@ static bool trans_MFFS_ISA207(DisasContext *ctx, arg_X_t_rc *a)
 
 static bool trans_MFFS(DisasContext *ctx, arg_X_t_rc *a)
 {
+    TCGv_i64 fpscr;
+
     REQUIRE_FPU(ctx);
 
     gen_reset_fpstatus();
-    place_from_fpscr(a->rt, UINT64_MAX);
+    fpscr = place_from_fpscr(a->rt, UINT64_MAX);
+    if (ctx->insns_flags & PPC_POWER_BR) {
+        /* the 601 fills the upper word with ones */
+        tcg_gen_ori_i64(fpscr, fpscr, MAKE_64BIT_MASK(32, 32));
+        set_fpr(a->rt, fpscr);
+    }
     if (a->rc) {
         gen_set_cr1_from_fpscr(ctx);
     }

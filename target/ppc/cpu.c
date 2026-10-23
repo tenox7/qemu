@@ -243,6 +243,10 @@ static inline void fpscr_set_rounding_mode(CPUPPCState *env)
 void ppc_store_fpscr(CPUPPCState *env, target_ulong val)
 {
     val &= FPSCR_MTFS_MASK;
+    if (env->flags & POWERPC_FLAG_601) {
+        /* the 601 has no VXSOFT, VXSQRT or non-IEEE mode */
+        val &= ~(FP_VXSOFT | FP_VXSQRT | FP_NI);
+    }
     if (val & FPSCR_IX) {
         val |= FP_VX;
     }

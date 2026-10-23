@@ -950,6 +950,7 @@ float64 float64r32_mul(float64, float64, float_status *status);
 float64 float64r32_div(float64, float64, float_status *status);
 float64 float64r32_muladd(float64, float64, float64, int, float_status *status);
 float64 float64r32_sqrt(float64, float_status *status);
+float64 float64_to_float64r32(float64, float_status *status);
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE extended double-precision conversion routines.

@@ -929,6 +929,7 @@ enum {
                       (1 << FPSCR_VXSOFT) | (1 << FPSCR_VXSQRT) | \
                       (1 << FPSCR_VXCVI))
 
+FIELD(FPSCR, FR, FPSCR_FR, 1)
 FIELD(FPSCR, FI, FPSCR_FI, 1)
 
 #define FP_DRN2         (1ull << FPSCR_DRN2)
@@ -1368,6 +1369,8 @@ struct CPUArchState {
     float_status vec_status;
     float_status fp_status; /* Floating point execution context */
     target_ulong fpscr;     /* Floating point status and control register */
+    /* an enabled invalid operation or zero divide keeps the target FPR */
+    bool fp_keep_target;
 
     /* Internal devices resources */
     ppc_tb_t *tb_env;      /* Time base and decrementer */

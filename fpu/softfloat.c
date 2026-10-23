@@ -2640,6 +2640,15 @@ float32 float64_to_float32(float64 a, float_status *s)
     return float32_round_pack_canonical(&p, s);
 }
 
+/* Round to single precision, keeping a rebiased exponent outside its range */
+float64 float64_to_float64r32(float64 a, float_status *s)
+{
+    FloatParts64 p = float64_unpack_canonical(a, s);
+
+    parts64_float_to_float(&p, s);
+    return float64r32_round_pack_canonical(&p, s);
+}
+
 float8_e4m3 bfloat16_to_float8_e4m3(bfloat16 a, bool saturate, float_status *s)
 {
     FloatParts64 p = bfloat16_unpack_canonical(a, s);
