@@ -187,34 +187,47 @@ static void serial_update_parameters(SerialState *s)
     trace_serial_update_parameters(speed, parity, data_bits, stop_bits);
 }
 
+/* The modem status inputs take new levels; changes set the delta bits */
+static void serial_set_msr_inputs(SerialState *s, uint8_t status)
+{
+    uint8_t omsr = s->msr;
+    uint8_t delta = (status ^ omsr) >> 4;
+
+    /* UART_MSR_TERI only if change was from 1 -> 0 */
+    if (!(omsr & UART_MSR_RI)) {
+        delta &= ~UART_MSR_TERI;
+    }
+    s->msr = status | (omsr & UART_MSR_ANY_DELTA) | delta;
+    if (s->msr != omsr) {
+        serial_update_irq(s);
+    }
+}
+
+/* In loopback the modem control outputs drive the modem status inputs */
+static uint8_t serial_loop_msr(SerialState *s)
+{
+    return (s->mcr & 0x0c) << 4 | (s->mcr & 0x02) << 3 | (s->mcr & 0x01) << 5;
+}
+
 static void serial_update_msl(SerialState *s)
 {
-    uint8_t omsr;
     int flags;
 
     timer_del(s->modem_status_poll);
 
+    if (s->mcr & UART_MCR_LOOP) {
+        return;
+    }
     if (qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_GET_TIOCM,
                           &flags) == -ENOTSUP) {
         s->poll_msl = -1;
         return;
     }
 
-    omsr = s->msr;
-
-    s->msr = (flags & CHR_TIOCM_CTS) ? s->msr | UART_MSR_CTS : s->msr & ~UART_MSR_CTS;
-    s->msr = (flags & CHR_TIOCM_DSR) ? s->msr | UART_MSR_DSR : s->msr & ~UART_MSR_DSR;
-    s->msr = (flags & CHR_TIOCM_CAR) ? s->msr | UART_MSR_DCD : s->msr & ~UART_MSR_DCD;
-    s->msr = (flags & CHR_TIOCM_RI) ? s->msr | UART_MSR_RI : s->msr & ~UART_MSR_RI;
-
-    if (s->msr != omsr) {
-         /* Set delta bits */
-         s->msr = s->msr | ((s->msr >> 4) ^ (omsr >> 4));
-         /* UART_MSR_TERI only if change was from 1 -> 0 */
-         if ((s->msr & UART_MSR_TERI) && !(omsr & UART_MSR_RI))
-             s->msr &= ~UART_MSR_TERI;
-         serial_update_irq(s);
-    }
+    serial_set_msr_inputs(s, (flags & CHR_TIOCM_CTS ? UART_MSR_CTS : 0) |
+                             (flags & CHR_TIOCM_DSR ? UART_MSR_DSR : 0) |
+                             (flags & CHR_TIOCM_CAR ? UART_MSR_DCD : 0) |
+                             (flags & CHR_TIOCM_RI ? UART_MSR_RI : 0));
 
     /* The real 16550A apparently has a 250ns response latency to line status changes.
        We'll be lazy and poll only every 10ms, and only poll it at all if MSI interrupts are turned on */
@@ -447,8 +460,19 @@ static void serial_ioport_write(void *opaque, hwaddr addr, uint64_t val,
         {
             int old_mcr = s->mcr;
             s->mcr = val & 0x1f;
-            if (val & UART_MCR_LOOP)
+            if (val & UART_MCR_LOOP) {
+                serial_set_msr_inputs(s, serial_loop_msr(s));
                 break;
+            }
+            if (old_mcr & UART_MCR_LOOP) {
+                /* the modem status inputs follow the line again */
+                if (s->poll_msl < 0) {
+                    serial_set_msr_inputs(s, UART_MSR_DCD | UART_MSR_DSR |
+                                             UART_MSR_CTS);
+                } else {
+                    serial_update_msl(s);
+                }
+            }
 
             if (s->poll_msl >= 0 && old_mcr != s->mcr) {
                 serial_update_tiocm(s);
@@ -529,21 +553,14 @@ static uint64_t serial_ioport_read(void *opaque, hwaddr addr, unsigned size)
         }
         break;
     case 6:
-        if (s->mcr & UART_MCR_LOOP) {
-            /* in loopback, the modem output pins are connected to the
-               inputs */
-            ret = (s->mcr & 0x0c) << 4;
-            ret |= (s->mcr & 0x02) << 3;
-            ret |= (s->mcr & 0x01) << 5;
-        } else {
-            if (s->poll_msl >= 0)
-                serial_update_msl(s);
-            ret = s->msr;
-            /* Clear delta bits & msr int after read, if they were set */
-            if (s->msr & UART_MSR_ANY_DELTA) {
-                s->msr &= 0xF0;
-                serial_update_irq(s);
-            }
+        if (s->poll_msl >= 0) {
+            serial_update_msl(s);
+        }
+        ret = s->msr;
+        /* Clear delta bits & msr int after read, if they were set */
+        if (s->msr & UART_MSR_ANY_DELTA) {
+            s->msr &= 0xF0;
+            serial_update_irq(s);
         }
         break;
     case 7:
