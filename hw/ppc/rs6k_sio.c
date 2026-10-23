@@ -9,8 +9,9 @@
  * The 82077 floppy controller at 0x60 interrupts on level 6 and does DMA on
  * arbitration level 0, through the ISA DMA interface of this device. The
  * keyboard port at 0x50, the mouse port at 0x48 and the tablet port, a
- * 16550 at 0x70 with no tablet attached, share interrupt level 1; bit 7 of
- * POS register 2 resets the mouse port.
+ * 16550 at 0x70 with no tablet attached, share interrupt level 1. Bit 7 of
+ * POS register 2 resets the mouse port and bit 5 the tablet port, whose CTS
+ * input senses the keyboard and mouse fuse (clear while it is good).
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -46,6 +47,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(Rs6kSIOState, RS6K_SIO)
 #define SIO_TABLET_ADDR 0x70
 #define SIO_POS_RESET   2
 #define SIO_RESET_MSE   0x80
+#define SIO_RESET_TABLET 0x20
 #define SIO_UARTS       2
 #define UART_LSR_THRE   0x20
 
@@ -286,6 +288,9 @@ static void sio_pos_write(void *opaque, int reg, uint8_t val)
 
     if (reg == SIO_POS_RESET) {
         rs6k_mse_set_reset(s->mse, val & SIO_RESET_MSE);
+        if (val & SIO_RESET_TABLET) {
+            serial_reset(&s->tablet);
+        }
     }
 }
 
@@ -330,6 +335,7 @@ static void rs6k_sio_init(Object *obj)
         object_property_add_alias(obj, chr, OBJECT(&s->uart[i]), "chardev");
     }
     object_initialize_child(obj, "tablet", &s->tablet, TYPE_SERIAL);
+    qdev_prop_set_uint8(DEVICE(&s->tablet), "modem-inputs", 0);
 }
 
 static const Property rs6k_sio_properties[] = {

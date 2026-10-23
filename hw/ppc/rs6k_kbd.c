@@ -5,7 +5,8 @@
  * I/O 0x50 goes to the keyboard and bytes from the keyboard are read there.
  * Reading 0x51 shows 0x40 while a received byte waits and 0x20 while the
  * transmitter is free. The port interrupts on level 1 while a byte waits.
- * Writes to 0x54 and 0x55 set the speaker tone, which is not emulated.
+ * Setting bit 2 of 0x51 loops the transmitter back to the receiver, for
+ * diagnostics. 0x54 and 0x55 latch the speaker tone, which is not emulated.
  *
  * The keyboard is QEMU's PS/2 keyboard, which AIX switches to scan code
  * set 3. The IBM keyboard also answers the layout ID command 0xef, with
@@ -27,9 +28,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(Rs6kKbdState, RS6K_KBD)
 
 #define KBD_DATA        0x0
 #define KBD_STATUS      0x1
+#define KBD_SPEAKER     0x4
 #define KBD_ST_ERROR    0x80
 #define KBD_ST_RX       0x40
 #define KBD_ST_TX       0x20
+#define KBD_CTL_LOOP    0x04
 
 #define KBD_CMD_SET_LEDS 0xed
 #define KBD_CMD_LAYOUT  0xef
@@ -49,6 +52,7 @@ struct Rs6kKbdState {
     PS2KbdState ps2;
 
     uint8_t ctl;
+    uint8_t speaker[2];
     bool keylist;
     bool rx_full;
     uint8_t rx;
@@ -100,7 +104,11 @@ static uint64_t kbd_read(void *opaque, hwaddr addr, unsigned size)
         kbd_fill(s);
         break;
     case KBD_STATUS:
-        val = KBD_ST_TX | (s->rx_full ? KBD_ST_RX : 0);
+        val = KBD_ST_TX | (s->rx_full ? KBD_ST_RX : 0) |
+              (s->ctl & KBD_CTL_LOOP);
+        break;
+    case KBD_SPEAKER ... KBD_SPEAKER + 1:
+        val = s->speaker[addr - KBD_SPEAKER];
         break;
     }
     trace_rs6k_kbd_read(addr, val);
@@ -147,10 +155,19 @@ static void kbd_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
     trace_rs6k_kbd_write(addr, size, val);
     switch (addr) {
     case KBD_DATA:
-        kbd_command(s, val);
+        if (s->ctl & KBD_CTL_LOOP) {
+            s->rx = val;
+            s->rx_full = true;
+            kbd_update_irq(s);
+        } else {
+            kbd_command(s, val);
+        }
         break;
     case KBD_STATUS:
         s->ctl = val;
+        break;
+    case KBD_SPEAKER ... KBD_SPEAKER + 1:
+        s->speaker[addr - KBD_SPEAKER] = val;
         break;
     }
 }
@@ -168,6 +185,7 @@ static void rs6k_kbd_reset(DeviceState *dev)
     Rs6kKbdState *s = RS6K_KBD(dev);
 
     s->ctl = 0;
+    memset(s->speaker, 0, sizeof(s->speaker));
     s->keylist = false;
     s->rx_full = false;
     s->nreply = 0;
