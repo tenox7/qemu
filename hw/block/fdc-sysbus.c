@@ -29,6 +29,8 @@
 #include "system/memory.h"
 #include "hw/core/sysbus.h"
 #include "hw/block/fdc.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/isa/isa.h"
 #include "migration/vmstate.h"
 #include "fdc-internal.h"
 #include "trace.h"
@@ -136,14 +138,7 @@ static void sysbus_fdc_common_instance_init(Object *obj)
     FDCtrlSysBus *sys = SYSBUS_FDC(obj);
     FDCtrl *fdctrl = &sys->state;
 
-    /*
-     * DMA is not currently supported for sysbus floppy controllers.
-     * If we wanted to add support then probably the best approach is
-     * to have a QOM link property 'dma-controller' which the board
-     * code can set to an instance of IsaDmaClass, and an integer
-     * property 'dma-channel', so that we can set fdctrl->dma and
-     * fdctrl->dma_chann accordingly.
-     */
+    /* sysbus-fdc does DMA when given its "dma" and "dma-channel" */
     fdctrl->dma_chann = -1;
 
     qdev_set_legacy_instance_id(dev, 0 /* io */, 2); /* FIXME */
@@ -163,6 +158,12 @@ static void sysbus_fdc_realize(DeviceState *dev, Error **errp)
     FDCtrlSysBus *sys = SYSBUS_FDC(dev);
     FDCtrl *fdctrl = &sys->state;
 
+    if (fdctrl->dma && fdctrl->dma_chann != -1) {
+        IsaDmaClass *k = ISADMA_GET_CLASS(fdctrl->dma);
+
+        k->register_channel(fdctrl->dma, fdctrl->dma_chann,
+                            &fdctrl_transfer_handler, fdctrl);
+    }
     fdctrl_realize_common(dev, fdctrl, errp);
 }
 
@@ -206,6 +207,8 @@ static const Property sysbus_fdc_properties[] = {
     DEFINE_PROP_SIGNED("fallback", FDCtrlSysBus, state.fallback,
                         FLOPPY_DRIVE_TYPE_144, qdev_prop_fdc_drive_type,
                         FloppyDriveType),
+    DEFINE_PROP_LINK("dma", FDCtrlSysBus, state.dma, TYPE_ISADMA, IsaDma *),
+    DEFINE_PROP_INT32("dma-channel", FDCtrlSysBus, state.dma_chann, -1),
 };
 
 static void sysbus_fdc_class_init(ObjectClass *klass, const void *data)
