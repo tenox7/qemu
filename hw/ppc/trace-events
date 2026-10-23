@@ -186,7 +186,6 @@ rs6k_iocc_dma(int arb, uint32_t addr, uint64_t pa, int to_device) "arb %d addr 0
 
 # rs6k.c
 rs6k_ds(uint32_t sr, uint64_t ea, uint32_t lr) "sr 0x%08x ea 0x%08" PRIx64 " lr 0x%08x"
-rs6k_led(uint32_t code) "LED 0x%03x"
 rs6k_sysreg_read(uint64_t addr, unsigned size, uint64_t val, uint32_t lr) "0x%08" PRIx64 " size %u -> 0x%" PRIx64 " lr 0x%08x"
 rs6k_sysreg_write(uint64_t addr, unsigned size, uint64_t val, uint32_t lr) "0x%08" PRIx64 " size %u = 0x%" PRIx64 " lr 0x%08x"
 rs6k_icp_read(uint64_t addr, unsigned size, uint64_t val) "0x%" PRIx64 " size %u -> 0x%" PRIx64
@@ -213,3 +212,7 @@ rs6k_kbd_write(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size 
 # rs6k_mse.c
 rs6k_mse_read(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size %u -> 0x%08" PRIx64
 rs6k_mse_write(uint64_t addr, unsigned size, uint64_t val) "+0x%" PRIx64 " size %u = 0x%04" PRIx64
+
+# rs6k_panel.c
+rs6k_led(uint32_t code) "LED 0x%03x"
+rs6k_key(const char *pos) "key %s"

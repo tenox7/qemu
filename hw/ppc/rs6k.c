@@ -23,6 +23,7 @@
 #include "hw/ppc/rs6k_scsi.h"
 #include "hw/ppc/rs6k_ent.h"
 #include "hw/ppc/rs6k_gxt.h"
+#include "hw/ppc/rs6k_panel.h"
 #include "hw/core/irq.h"
 #include "hw/isa/isa.h"
 #include "hw/rtc/mc146818rtc.h"
@@ -36,6 +37,7 @@
 typedef struct {
     MachineState parent_obj;
     char *nvram;
+    char *key;
 } Rs6kMachineState;
 
 #define RS6K_MACHINE(obj) \
@@ -60,8 +62,7 @@ typedef struct {
     uint8_t *ros_image;
     MemoryRegion sysregs;
     MemoryRegion nvram;
-    MemoryRegion led;
-    uint32_t led_val;
+    DeviceState *panel;
     MemoryRegion buc;
     uint32_t buc_sel;
     MemoryRegion vpd;
@@ -481,6 +482,9 @@ static void regfile_write(Rs6kState *s, uint32_t key, uint64_t val,
 #define SYSREG_ADDR 0xff000000
 #define SYSREG_SIZE 0x00e00000
 
+/* Power status and keylock decode: the key position in the low two bits */
+#define KEYLOCK     0x0000e4
+
 /*
  * Bus unit controllers: writing 0x80000000 | n to the select register maps
  * the configuration registers of BUC n at 0xff200000. Each starts with a
@@ -519,7 +523,12 @@ static uint64_t sysreg_read(void *opaque, hwaddr addr, unsigned size)
         }
         return val;
     }
-    val = regfile_read(s, addr, size);
+    if (addr >= KEYLOCK && addr + size <= KEYLOCK + 4) {
+        val = extract32(~3u | rs6k_panel_key(s->panel),
+                        (KEYLOCK + 4 - addr - size) * 8, size * 8);
+    } else {
+        val = regfile_read(s, addr, size);
+    }
     trace_rs6k_sysreg_read(SYSREG_ADDR + addr, size, val, cpu_lr());
     return val;
 }
@@ -589,35 +598,13 @@ static const MemoryRegionOps buc_ops = {
 
 /*
  * Battery-backed NVRAM at 0xff600000 holds the ROS configuration, the IPL
- * device list and the AIX error log; the word at 0x300 drives the LED
- * display. The "nvram" machine property keeps the contents in a file.
+ * device list and the AIX error log; the word at 0x300 is the operator
+ * panel's LED display. The "nvram" machine property keeps the contents in
+ * a file.
  */
 #define NVRAM_ADDR  0xff600000
 #define NVRAM_SIZE  (32 * KiB)
 #define LED_OFF     0x300
-
-static uint64_t led_read(void *opaque, hwaddr addr, unsigned size)
-{
-    Rs6kState *s = opaque;
-
-    return extract32(s->led_val, (4 - addr - size) * 8, size * 8);
-}
-
-static void led_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
-{
-    Rs6kState *s = opaque;
-
-    s->led_val = deposit32(s->led_val, (4 - addr - size) * 8, size * 8, val);
-    trace_rs6k_led(s->led_val >> 20);
-}
-
-static const MemoryRegionOps led_ops = {
-    .read = led_read,
-    .write = led_write,
-    .endianness = DEVICE_BIG_ENDIAN,
-    .impl.min_access_size = 1,
-    .impl.max_access_size = 4,
-};
 
 static void rs6k_init_nvram(Rs6kState *s, MemoryRegion *sysmem,
                             const char *path)
@@ -631,9 +618,22 @@ static void rs6k_init_nvram(Rs6kState *s, MemoryRegion *sysmem,
                                &error_fatal);
     }
     memory_region_add_subregion_overlap(sysmem, NVRAM_ADDR, &s->nvram, 1);
-    memory_region_init_io(&s->led, NULL, &led_ops, s, "rs6k.led", 4);
-    memory_region_add_subregion_overlap(sysmem, NVRAM_ADDR + LED_OFF, &s->led,
-                                        2);
+}
+
+/* The panel's id ties its window to the clicks that turn the key */
+static void rs6k_init_panel(Rs6kState *s, MachineState *machine)
+{
+    const char *key = RS6K_MACHINE(machine)->key;
+
+    s->panel = qdev_new(TYPE_RS6K_PANEL);
+    s->panel->id = g_strdup("panel");
+    object_property_add_child(OBJECT(machine), "panel", OBJECT(s->panel));
+    if (key) {
+        object_property_set_str(OBJECT(s->panel), "key", key, &error_fatal);
+    }
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->panel), &error_fatal);
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(s->panel), 0,
+                            NVRAM_ADDR + LED_OFF, 2);
 }
 
 /* Planar VPD: keyword records '*', two letters, length in halfwords */
@@ -934,6 +934,7 @@ static void rs6k_init(MachineState *machine)
     memory_region_init_io(&s->vpd, NULL, &vpd_ops, s, "rs6k.vpd", VPD_SIZE);
     memory_region_add_subregion(sysmem, VPD_ADDR, &s->vpd);
     rs6k_init_nvram(s, sysmem, RS6K_MACHINE(machine)->nvram);
+    rs6k_init_panel(s, machine);
     rs6k_init_tod(sysmem);
 
     memory_region_init_ram(&s->ros, NULL, "rs6k.ros", ROS_SIZE, &error_fatal);
@@ -968,6 +969,19 @@ static void rs6k_set_nvram(Object *obj, const char *value, Error **errp)
     ms->nvram = g_strdup(value);
 }
 
+static char *rs6k_get_key(Object *obj, Error **errp)
+{
+    return g_strdup(RS6K_MACHINE(obj)->key);
+}
+
+static void rs6k_set_key(Object *obj, const char *value, Error **errp)
+{
+    Rs6kMachineState *ms = RS6K_MACHINE(obj);
+
+    g_free(ms->key);
+    ms->key = g_strdup(value);
+}
+
 static void rs6k_machine_init(MachineClass *mc)
 {
     ObjectClass *oc = OBJECT_CLASS(mc);
@@ -976,6 +990,10 @@ static void rs6k_machine_init(MachineClass *mc)
                                   rs6k_set_nvram);
     object_class_property_set_description(oc, "nvram",
                                           "File keeping the NVRAM contents");
+    object_class_property_add_str(oc, "key", rs6k_get_key, rs6k_set_key);
+    object_class_property_set_description(oc, "key",
+                                          "Key mode switch at power-on: "
+                                          "normal, service or secure");
     compat_props_add(mc->compat_props, rs6k_compat, G_N_ELEMENTS(rs6k_compat));
     mc->desc = "IBM RS/6000 7006 (PowerPC 601, Micro Channel)";
     mc->init = rs6k_init;
