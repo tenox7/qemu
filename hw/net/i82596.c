@@ -188,37 +188,39 @@ static void i82596_update_statistics(I82596State *s, bool is_tx,
                                       uint16_t error_flags,
                                       uint16_t collision_count);
 
-static uint8_t get_byte(uint32_t addr)
+static uint8_t get_byte(I82596State *s, uint32_t addr)
 {
-    return ldub_phys(&address_space_memory, addr);
+    return ldub_phys(s->dma_as, addr);
 }
 
-static void set_byte(uint32_t addr, uint8_t c)
+static uint16_t get_uint16(I82596State *s, uint32_t addr)
 {
-    return stb_phys(&address_space_memory, addr, c);
+    if (s->little_endian) {
+        return lduw_le_phys(s->dma_as, addr);
+    }
+    return lduw_be_phys(s->dma_as, addr);
 }
 
-static uint16_t get_uint16(uint32_t addr)
+static void set_uint16(I82596State *s, uint32_t addr, uint16_t w)
 {
-    return lduw_be_phys(&address_space_memory, addr);
+    if (s->little_endian) {
+        stw_le_phys(s->dma_as, addr, w);
+        return;
+    }
+    stw_be_phys(s->dma_as, addr, w);
 }
 
-static void set_uint16(uint32_t addr, uint16_t w)
+static uint32_t get_uint32(I82596State *s, uint32_t addr)
 {
-    return stw_be_phys(&address_space_memory, addr, w);
-}
-
-static uint32_t get_uint32(uint32_t addr)
-{
-    uint32_t lo = lduw_be_phys(&address_space_memory, addr);
-    uint32_t hi = lduw_be_phys(&address_space_memory, addr + 2);
+    uint32_t lo = get_uint16(s, addr);
+    uint32_t hi = get_uint16(s, addr + 2);
     return (hi << 16) | lo;
 }
 
-static void set_uint32(uint32_t addr, uint32_t val)
+static void set_uint32(I82596State *s, uint32_t addr, uint32_t val)
 {
-    set_uint16(addr, (uint16_t) val);
-    set_uint16(addr + 2, val >> 16);
+    set_uint16(s, addr, (uint16_t) val);
+    set_uint16(s, addr + 2, val >> 16);
 }
 
 /* Centralized error detection and update mechanism */
@@ -227,33 +229,33 @@ static void i82596_record_error(I82596State *s, uint16_t error_type, bool is_tx)
     if (is_tx) {
         if (error_type & TX_ABORTED_ERRORS) {
             s->tx_aborted_errors++;
-            set_uint32(s->scb + 28, s->tx_aborted_errors);
+            set_uint32(s, s->scb + 28, s->tx_aborted_errors);
         }
     } else {
         if (error_type & RX_CRC_ERRORS) {
             s->crc_err++;
-            set_uint32(s->scb + 16, s->crc_err);
+            set_uint32(s, s->scb + 16, s->crc_err);
         }
 
         if (error_type & (RX_LENGTH_ERRORS | RX_LENGTH_ERRORS_ALT |
                           RX_FRAME_ERRORS)) {
             s->align_err++;
-            set_uint32(s->scb + 18, s->align_err);
+            set_uint32(s, s->scb + 18, s->align_err);
         }
 
         if (error_type & RFD_STATUS_NOBUFS) {
             s->resource_err++;
-            set_uint32(s->scb + 20, s->resource_err);
+            set_uint32(s, s->scb + 20, s->resource_err);
         }
 
         if (error_type & (RX_OVER_ERRORS | RX_FIFO_ERRORS)) {
             s->over_err++;
-            set_uint32(s->scb + 22, s->over_err);
+            set_uint32(s, s->scb + 22, s->over_err);
         }
 
         if (error_type & RFD_STATUS_TRUNC) {
             s->short_fr_error++;
-            set_uint32(s->scb + 26, s->short_fr_error);
+            set_uint32(s, s->scb + 26, s->short_fr_error);
         }
     }
 }
@@ -437,91 +439,91 @@ struct i82596_rx_buffer_desc {
 static void i82596_tx_tfd_read(I82596State *s, hwaddr addr,
                                 struct i82596_tx_descriptor *desc)
 {
-    desc->status_bits = get_uint16(addr + 0);
-    desc->command = get_uint16(addr + 2);
-    desc->link_addr = get_uint32(addr + 4);
-    desc->tbd_addr = get_uint32(addr + 8);
-    desc->tcb_count = get_uint16(addr + 12);
-    address_space_read(&address_space_memory, addr + 14,
+    desc->status_bits = get_uint16(s, addr + 0);
+    desc->command = get_uint16(s, addr + 2);
+    desc->link_addr = get_uint32(s, addr + 4);
+    desc->tbd_addr = get_uint32(s, addr + 8);
+    desc->tcb_count = get_uint16(s, addr + 12);
+    address_space_read(s->dma_as, addr + 14,
                       MEMTXATTRS_UNSPECIFIED, desc->dest_addr, 6);
-    desc->length_field = get_uint16(addr + 20);
+    desc->length_field = get_uint16(s, addr + 20);
 }
 
 static void i82596_tx_tfd_write(I82596State *s, hwaddr addr,
                                  struct i82596_tx_descriptor *desc)
 {
-    set_uint16(addr + 0, desc->status_bits);
-    set_uint16(addr + 2, desc->command);
-    set_uint32(addr + 4, desc->link_addr);
-    set_uint32(addr + 8, desc->tbd_addr);
-    set_uint16(addr + 12, desc->tcb_count);
-    address_space_write(&address_space_memory, addr + 14,
+    set_uint16(s, addr + 0, desc->status_bits);
+    set_uint16(s, addr + 2, desc->command);
+    set_uint32(s, addr + 4, desc->link_addr);
+    set_uint32(s, addr + 8, desc->tbd_addr);
+    set_uint16(s, addr + 12, desc->tcb_count);
+    address_space_write(s->dma_as, addr + 14,
                        MEMTXATTRS_UNSPECIFIED, desc->dest_addr, 6);
-    set_uint16(addr + 20, desc->length_field);
+    set_uint16(s, addr + 20, desc->length_field);
 }
 
 static void i82596_tbd_read(I82596State *s, hwaddr addr,
                             struct i82596_tx_buffer_desc *tbd)
 {
-    tbd->size = get_uint16(addr + 0);
-    tbd->link = get_uint32(addr + 4);
-    tbd->buffer = get_uint32(addr + 8);
+    tbd->size = get_uint16(s, addr + 0);
+    tbd->link = get_uint32(s, addr + 4);
+    tbd->buffer = get_uint32(s, addr + 8);
 }
 
 static void i82596_rx_rfd_read(I82596State *s, hwaddr addr,
                                 struct i82596_rx_descriptor *desc)
 {
-    desc->status_bits = get_uint16(addr + 0x0);
-    desc->command = get_uint16(addr + 0x2);
-    desc->link = get_uint32(addr + 0x4);
-    desc->rbd_addr = get_uint32(addr + 0x8);
-    desc->actual_count = get_uint16(addr + 0xC);
-    desc->size = get_uint16(addr + 0xE);
+    desc->status_bits = get_uint16(s, addr + 0x0);
+    desc->command = get_uint16(s, addr + 0x2);
+    desc->link = get_uint32(s, addr + 0x4);
+    desc->rbd_addr = get_uint32(s, addr + 0x8);
+    desc->actual_count = get_uint16(s, addr + 0xC);
+    desc->size = get_uint16(s, addr + 0xE);
 
-    address_space_read(&address_space_memory, addr + 0x10,
+    address_space_read(s->dma_as, addr + 0x10,
                       MEMTXATTRS_UNSPECIFIED, desc->dest_addr, 6);
-    address_space_read(&address_space_memory, addr + 0x16,
+    address_space_read(s->dma_as, addr + 0x16,
                       MEMTXATTRS_UNSPECIFIED, desc->src_addr, 6);
-    desc->length_field = get_uint16(addr + 28);
+    desc->length_field = get_uint16(s, addr + 28);
 }
 
 static void i82596_rx_desc_write(I82596State *s, hwaddr addr,
                                   struct i82596_rx_descriptor *desc,
                                   bool write_full)
 {
-    set_uint16(addr + 0x0, desc->status_bits);
-    set_uint16(addr + 0xC, desc->actual_count);
+    set_uint16(s, addr + 0x0, desc->status_bits);
+    set_uint16(s, addr + 0xC, desc->actual_count);
 
     if (write_full) {
-        set_uint16(addr + 0x2, desc->command);
-        set_uint32(addr + 0x4, desc->link);
-        set_uint32(addr + 0x8, desc->rbd_addr);
-        set_uint16(addr + 0xE, desc->size);
+        set_uint16(s, addr + 0x2, desc->command);
+        set_uint32(s, addr + 0x4, desc->link);
+        set_uint32(s, addr + 0x8, desc->rbd_addr);
+        set_uint16(s, addr + 0xE, desc->size);
 
-        address_space_write(&address_space_memory, addr + 0x10,
+        address_space_write(s->dma_as, addr + 0x10,
                           MEMTXATTRS_UNSPECIFIED, desc->dest_addr, 6);
-        address_space_write(&address_space_memory, addr + 0x16,
+        address_space_write(s->dma_as, addr + 0x16,
                           MEMTXATTRS_UNSPECIFIED, desc->src_addr, 6);
-        set_uint16(addr + 0x1C, desc->length_field);
+        set_uint16(s, addr + 0x1C, desc->length_field);
     }
 }
 
 static void i82596_rbd_read(I82596State *s, hwaddr addr,
                             struct i82596_rx_buffer_desc *rbd)
 {
-    rbd->actual_count = get_uint16(addr + 0x0);
-    rbd->next_rbd_addr = get_uint32(addr + 0x4);
-    rbd->buffer_addr = get_uint32(addr + 0x8);
-    rbd->size = get_uint16(addr + 0xC);
+    rbd->actual_count = get_uint16(s, addr + 0x0);
+    rbd->next_rbd_addr = get_uint32(s, addr + 0x4);
+    rbd->buffer_addr = get_uint32(s, addr + 0x8);
+    rbd->size = get_uint16(s, addr + 0xC);
 }
 
 static void i82596_rbd_write(I82596State *s, hwaddr addr,
                              struct i82596_rx_buffer_desc *rbd)
 {
-    set_uint16(addr + 0x0, rbd->actual_count);
-    set_uint32(addr + 0x4, rbd->next_rbd_addr);
-    set_uint32(addr + 0x8, rbd->buffer_addr);
-    set_uint16(addr + 0xC, rbd->size);
+    set_uint16(s, addr + 0x0, rbd->actual_count);
+    set_uint32(s, addr + 0x4, rbd->next_rbd_addr);
+    set_uint32(s, addr + 0x8, rbd->buffer_addr);
+    set_uint16(s, addr + 0xC, rbd->size);
 }
 
 static int i82596_tx_copy_buffers(I82596State *s, hwaddr tfd_addr,
@@ -539,7 +541,7 @@ static int i82596_tx_copy_buffers(I82596State *s, hwaddr tfd_addr,
         if (frame_len == 0 || frame_len > sizeof(s->tx_buffer)) {
             return -1;
         }
-        address_space_read(&address_space_memory, tfd_addr + 16,
+        address_space_read(s->dma_as, tfd_addr + 16,
                           MEMTXATTRS_UNSPECIFIED, s->tx_buffer, frame_len);
         total_len = frame_len;
 
@@ -562,7 +564,7 @@ static int i82596_tx_copy_buffers(I82596State *s, hwaddr tfd_addr,
             }
 
             if (buf_size > 0 && buf_addr != 0 && buf_addr != I596_NULL) {
-                address_space_read(&address_space_memory, buf_addr,
+                address_space_read(s->dma_as, buf_addr,
                                   MEMTXATTRS_UNSPECIFIED,
                                   s->tx_buffer + total_len, buf_size);
                 total_len += buf_size;
@@ -909,7 +911,7 @@ static size_t i82596_rx_copy_to_rfd(I82596State *s, hwaddr rfd_addr,
     size_t data_offset = 0x1E; /* Bypassing the header */
 
     if (to_copy > 0) {
-        address_space_write(&address_space_memory, rfd_addr + data_offset,
+        address_space_write(s->dma_as, rfd_addr + data_offset,
                            MEMTXATTRS_UNSPECIFIED, buf, to_copy);
     }
     return to_copy;
@@ -950,7 +952,7 @@ static size_t i82596_rx_copy_to_rbds(I82596State *s, hwaddr rbd_addr,
         size_t remaining = size - bytes_copied;
         size_t to_copy = MIN(remaining, buf_size);
         if (to_copy > 0) {
-            address_space_write(&address_space_memory, buf_addr,
+            address_space_write(s->dma_as, buf_addr,
                                MEMTXATTRS_UNSPECIFIED,
                                buf + bytes_copied, to_copy);
             bytes_copied += to_copy;
@@ -1008,12 +1010,12 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
     }
 
 
-    rfd_addr = get_uint32(s->scb + 8);
+    rfd_addr = get_uint32(s, s->scb + 8);
 
     if (rfd_addr == 0 || rfd_addr == I596_NULL) {
         i82596_update_rx_state(s, RX_NO_RESOURCES);
         s->resource_err++;
-        set_uint16(s->scb, get_uint16(s->scb) | SCB_STATUS_RNR);
+        set_uint16(s, s->scb, get_uint16(s, s->scb) | SCB_STATUS_RNR);
         i82596_update_scb_irq(s, true);
         return -1;
     }
@@ -1031,7 +1033,7 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
     /* 0: Simplified Mode 1: Flexible Mode */
     simplified_mode = !(rfd.command & CMD_FLEX);
 
-    set_uint16(rfd_addr, STAT_B);
+    set_uint16(s, rfd_addr, STAT_B);
 
     if (frame_size < 14) {
         trace_i82596_rx_short_frame(frame_size);
@@ -1076,7 +1078,7 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
                 size_t data_offset = 0x10;
 
                 rfd_frame_size = MIN(remaining_to_copy, rfd_size);
-                address_space_write(&address_space_memory,
+                address_space_write(s->dma_as,
                                     rfd_addr + data_offset,
                                     MEMTXATTRS_UNSPECIFIED,
                                     packet_data + bytes_copied,
@@ -1108,9 +1110,9 @@ static ssize_t i82596_receive_packet(I82596State *s, const uint8_t *buf,
                     if (next_rfd != I596_NULL && next_rfd != 0) {
                         if (remaining_rbd != I596_NULL && remaining_rbd != 0) {
                             trace_i82596_rx_rfd_update(next_rfd, remaining_rbd);
-                            set_uint32(next_rfd + 8, remaining_rbd);
+                            set_uint32(s, next_rfd + 8, remaining_rbd);
                         } else {
-                            set_uint32(next_rfd + 8, I596_NULL);
+                            set_uint32(s, next_rfd + 8, I596_NULL);
                         }
                     }
 
@@ -1150,7 +1152,7 @@ rx_complete:
         }
 
         if (simplified_mode) {
-            address_space_write(&address_space_memory,
+            address_space_write(s->dma_as,
                                 rfd_addr + 0x1E + bytes_copied,
                                 MEMTXATTRS_UNSPECIFIED, crc_data, crc_len);
         }
@@ -1186,7 +1188,7 @@ rx_complete:
     if (packet_completed && s->rx_status == RX_READY) {
         uint32_t next_rfd_addr = i82596_translate_address(s, rfd.link, false);
         if (next_rfd_addr != 0 && next_rfd_addr != I596_NULL) {
-            set_uint32(s->scb + 8, next_rfd_addr);
+            set_uint32(s, s->scb + 8, next_rfd_addr);
         }
 
         s->scb_status |= SCB_STATUS_FR;
@@ -1212,7 +1214,7 @@ ssize_t i82596_receive(NetClientState *nc, const uint8_t *buf, size_t size)
         if (s->queue_count >= PACKET_QUEUE_SIZE) {
             trace_i82596_receive_queue_full();
             s->over_err++;
-            set_uint32(s->scb + 22, s->over_err);
+            set_uint32(s, s->scb + 22, s->over_err);
             i82596_record_error(s, RX_OVER_ERRORS, false);
             return size;
         }
@@ -1267,7 +1269,7 @@ static void set_individual_address(I82596State *s, uint32_t addr)
 
     nc = qemu_get_queue(s->nic);
     m = s->conf.macaddr.a;
-    address_space_read(&address_space_memory, addr + 8,
+    address_space_read(s->dma_as, addr + 8,
                        MEMTXATTRS_UNSPECIFIED, m, ETH_ALEN);
     qemu_format_nic_info_str(nc, m);
     trace_i82596_new_mac(nc->info_str);
@@ -1278,14 +1280,14 @@ static void set_multicast_list(I82596State *s, uint32_t addr)
     uint16_t mc_count, i;
 
     memset(&s->mult[0], 0, sizeof(s->mult));
-    mc_count = get_uint16(addr + 8) / ETH_ALEN;
+    mc_count = get_uint16(s, addr + 8) / ETH_ALEN;
     addr += 10;
     if (mc_count > MAX_MC_CNT) {
         mc_count = MAX_MC_CNT;
     }
     for (i = 0; i < mc_count; i++) {
         uint8_t multicast_addr[ETH_ALEN];
-        address_space_read(&address_space_memory, addr + i * ETH_ALEN,
+        address_space_read(s->dma_as, addr + i * ETH_ALEN,
                            MEMTXATTRS_UNSPECIFIED, multicast_addr, ETH_ALEN);
         unsigned mcast_idx = (net_crc32(multicast_addr, ETH_ALEN) &
                               BITS(7, 2)) >> 2;
@@ -1383,23 +1385,23 @@ static void i82596_update_statistics(I82596State *s, bool is_tx,
             s->tx_collisions += collision_count;
             s->collision_events++;
             s->total_collisions += collision_count;
-            set_uint32(s->scb + 32, s->tx_collisions);
+            set_uint32(s, s->scb + 32, s->tx_collisions);
         }
         if (error_flags) {
             i82596_record_error(s, error_flags, true);
         }
         if (!(error_flags & (TX_ABORTED_ERRORS | TX_CARRIER_ERRORS))) {
             s->tx_good_frames++;
-            set_uint32(s->scb + 36, s->tx_good_frames);
+            set_uint32(s, s->scb + 36, s->tx_good_frames);
         }
     } else {
         s->total_frames++;
-        set_uint32(s->scb + 40, s->total_frames);
+        set_uint32(s, s->scb + 40, s->total_frames);
         if (error_flags) {
             i82596_record_error(s, error_flags, false);
         } else {
             s->total_good_frames++;
-            set_uint32(s->scb + 44, s->total_good_frames);
+            set_uint32(s, s->scb + 44, s->total_good_frames);
         }
     }
 }
@@ -1432,8 +1434,8 @@ static void i82596_load_throttle_timers(I82596State *s, bool start_now)
 {
     uint16_t previous_t_on = s->t_on;
     uint16_t previous_t_off = s->t_off;
-    s->t_on = get_uint16(s->scb + 36);
-    s->t_off = get_uint16(s->scb + 38);
+    s->t_on = get_uint16(s, s->scb + 36);
+    s->t_off = get_uint16(s, s->scb + 38);
 
     bool values_changed = (s->t_on != previous_t_on ||
                            s->t_off != previous_t_off);
@@ -1542,10 +1544,10 @@ static void i82596_port_dump(I82596State *s, uint32_t dump_addr)
 
     i82596_init_dump_area(s, dump_buffer);
 
-    address_space_write(&address_space_memory, dump_addr,
+    address_space_write(s->dma_as, dump_addr,
                       MEMTXATTRS_UNSPECIFIED, dump_buffer, sizeof(dump_buffer));
 
-    set_uint32(dump_addr, 0xFFFF0000);
+    set_uint32(s, dump_addr, 0xFFFF0000);
     s->scb_status |= SCB_STATUS_CX;
     s->send_irq = 1;
 }
@@ -1554,16 +1556,16 @@ static void i82596_command_dump(I82596State *s, uint32_t cmd_addr)
 {
     uint32_t dump_addr;
     uint8_t dump_buffer[DUMP_BUF_SZ];
-    uint16_t cmd = get_uint16(cmd_addr + 2);
+    uint16_t cmd = get_uint16(s, cmd_addr + 2);
     uint16_t status;
 
-    dump_addr = get_uint32(cmd_addr + 8);
+    dump_addr = get_uint32(s, cmd_addr + 8);
 
     i82596_init_dump_area(s, dump_buffer);
-    address_space_write(&address_space_memory, dump_addr,
+    address_space_write(s->dma_as, dump_addr,
                       MEMTXATTRS_UNSPECIFIED, dump_buffer, sizeof(dump_buffer));
     status = STAT_C | STAT_OK;
-    set_uint16(cmd_addr, status);
+    set_uint16(s, cmd_addr, status);
     if (cmd & CMD_INTR) {
         s->scb_status |= SCB_STATUS_CX;
         s->send_irq = 1;
@@ -1577,14 +1579,14 @@ static void i82596_command_dump(I82596State *s, uint32_t cmd_addr)
 static void i82596_configure(I82596State *s, uint32_t addr)
 {
     uint8_t byte_cnt;
-    byte_cnt = get_byte(addr + 8) & 0x0f;
+    byte_cnt = get_byte(s, addr + 8) & 0x0f;
     byte_cnt = MAX(byte_cnt, 4);
     byte_cnt = MIN(byte_cnt, sizeof(s->config));
     s->config[2] &= 0x82; /* mask valid bits */
     s->config[2] |= 0x40;
     s->config[7]  &= 0xf7; /* clear zero bit */
 
-    address_space_read(&address_space_memory, addr + 8,
+    address_space_read(s->dma_as, addr + 8,
                        MEMTXATTRS_UNSPECIFIED, s->config, byte_cnt);
 
     if (byte_cnt > 12) {
@@ -1649,27 +1651,27 @@ static void update_scb_status(I82596State *s)
 {
     s->scb_status = (s->scb_status & 0xf000)
         | (s->cu_status << 8) | (s->rx_status << 4) | (s->lnkst >> 8);
-    set_uint16(s->scb, s->scb_status);
+    set_uint16(s, s->scb, s->scb_status);
 
-    set_uint32(s->scb + 28, s->tx_aborted_errors);
-    set_uint32(s->scb + 32, s->tx_collisions);
-    set_uint32(s->scb + 36, s->tx_good_frames);
+    set_uint32(s, s->scb + 28, s->tx_aborted_errors);
+    set_uint32(s, s->scb + 32, s->tx_collisions);
+    set_uint32(s, s->scb + 36, s->tx_good_frames);
 
-    set_uint32(s->scb + 16, s->crc_err);
-    set_uint32(s->scb + 18, s->align_err);
-    set_uint32(s->scb + 20, s->resource_err);
-    set_uint32(s->scb + 22, s->over_err);
-    set_uint32(s->scb + 24, s->rcvdt_err);
-    set_uint32(s->scb + 26, s->short_fr_error);
+    set_uint32(s, s->scb + 16, s->crc_err);
+    set_uint32(s, s->scb + 18, s->align_err);
+    set_uint32(s, s->scb + 20, s->resource_err);
+    set_uint32(s, s->scb + 22, s->over_err);
+    set_uint32(s, s->scb + 24, s->rcvdt_err);
+    set_uint32(s, s->scb + 26, s->short_fr_error);
 }
 
 static void command_loop(I82596State *s)
 {
     while (s->cu_status == CU_ACTIVE && s->cmd_p != I596_NULL &&
            s->cmd_p != 0) {
-        uint16_t status = get_uint16(s->cmd_p);
+        uint16_t status = get_uint16(s, s->cmd_p);
         if (status & (STAT_C | STAT_B)) {
-            uint32_t next = get_uint32(s->cmd_p + 4);
+            uint32_t next = get_uint32(s, s->cmd_p + 4);
             if (next == 0 || next == s->cmd_p) {
                 s->cmd_p = I596_NULL;
                 s->cu_status = CU_IDLE;
@@ -1679,9 +1681,9 @@ static void command_loop(I82596State *s)
             s->cmd_p = i82596_translate_address(s, next, false);
             continue;
         }
-        set_uint16(s->cmd_p, STAT_B);
-        uint16_t cmd = get_uint16(s->cmd_p + 2);
-        uint32_t next_addr = get_uint32(s->cmd_p + 4);
+        set_uint16(s, s->cmd_p, STAT_B);
+        uint16_t cmd = get_uint16(s, s->cmd_p + 2);
+        uint32_t next_addr = get_uint32(s, s->cmd_p + 4);
         next_addr = (next_addr == 0) ? I596_NULL :
                     i82596_translate_address(s, next_addr, false);
         switch (cmd & CMD_MASK) {
@@ -1694,7 +1696,7 @@ static void command_loop(I82596State *s)
             i82596_configure(s, s->cmd_p);
             break;
         case CmdTDR:
-            set_uint32(s->cmd_p + 8, s->lnkst);
+            set_uint32(s, s->cmd_p + 8, s->lnkst);
             break;
         case CmdTx:
             i82596_transmit(s, s->cmd_p);
@@ -1712,9 +1714,9 @@ static void command_loop(I82596State *s)
             break;
         }
 
-        status = get_uint16(s->cmd_p);
+        status = get_uint16(s, s->cmd_p);
         if (!(status & STAT_C)) {
-            set_uint16(s->cmd_p, STAT_C | STAT_OK);
+            set_uint16(s, s->cmd_p, STAT_C | STAT_OK);
         }
 
 skip_status_update:
@@ -1765,13 +1767,13 @@ skip_status_update:
 
 static void examine_scb(I82596State *s)
 {
-    uint16_t command = get_uint16(s->scb + 2);
+    uint16_t command = get_uint16(s, s->scb + 2);
     uint8_t cuc = (command >> 8) & 0x7;
     uint8_t ruc = (command >> 4) & 0x7;
 
     trace_i82596_scb_command(cuc, ruc);
 
-    set_uint16(s->scb + 2, 0);
+    set_uint16(s, s->scb + 2, 0);
     s->scb_status &= ~(command & SCB_ACK_MASK);
 
     if (command & SCB_STATUS_RNR) {
@@ -1784,7 +1786,7 @@ static void examine_scb(I82596State *s)
         break;
 
     case SCB_CUC_START: {
-        uint32_t cmd_ptr = get_uint32(s->scb + 4);
+        uint32_t cmd_ptr = get_uint32(s, s->scb + 4);
         s->cmd_p = i82596_translate_address(s, cmd_ptr, false);
         s->cu_status = CU_ACTIVE;
         break;
@@ -1823,7 +1825,7 @@ static void examine_scb(I82596State *s)
         break;
 
     case SCB_RUC_START: {
-        uint32_t rfd_log = get_uint32(s->scb + 8);
+        uint32_t rfd_log = get_uint32(s, s->scb + 8);
         hwaddr rfd = i82596_translate_address(s, rfd_log, false);
 
         if (rfd == 0 || rfd == I596_NULL) {
@@ -1865,7 +1867,7 @@ static void examine_scb(I82596State *s)
             i82596_update_rx_state(s, RX_READY);
 
             if (first_usable_rfd != rfd) {
-                set_uint32(s->scb + 8, first_usable_rfd_log);
+                set_uint32(s, s->scb + 8, first_usable_rfd_log);
             }
 
             if (s->queue_count > 0) {
@@ -1909,7 +1911,7 @@ static void examine_scb(I82596State *s)
     }
     if (s->cu_status == CU_ACTIVE) {
         if (s->cmd_p == I596_NULL) {
-            s->cmd_p = get_uint32(s->scb + 4);
+            s->cmd_p = get_uint32(s, s->scb + 4);
         }
         update_scb_status(s);
         command_loop(s);
@@ -1922,14 +1924,14 @@ static void signal_ca(I82596State *s)
 {
     if (s->scp) {
         /* CA after reset -> initialize with new SCP */
-        s->sysbus = get_byte(s->scp + 3);
+        s->sysbus = get_uint32(s, s->scp) >> 16;
         s->mode = (s->sysbus >> 1) & 0x03;  /* Extract mode bits (m0, m1) */
-        s->iscp = get_uint32(s->scp + 8);
+        s->iscp = get_uint32(s, s->scp + 8);
 
-        s->scb = get_uint32(s->iscp + 4);
+        s->scb = get_uint32(s, s->iscp + 4);
 
         s->scb_base = (s->mode == I82596_MODE_LINEAR) ? 0 :
-                      get_uint32(s->iscp + 8);
+                      get_uint32(s, s->iscp + 8);
         s->scb = i82596_translate_address(s, s->scb, false);
         trace_i82596_ca_init(s->scb, s->mode, s->scb_base);
 
@@ -1940,10 +1942,10 @@ static void signal_ca(I82596State *s)
          * - Clear SCB command word
          * - Signal interrupt
          */
-        set_byte(s->iscp + 1, 0);
+        set_uint16(s, s->iscp, get_uint16(s, s->iscp) & 0xff00);
         s->scb_status |= SCB_STATUS_CX | SCB_STATUS_CNA;
         update_scb_status(s);
-        set_uint16(s->scb + 2, 0);
+        set_uint16(s, s->scb + 2, 0);
         s->scp = 0;
         qemu_set_irq(s->irq, 1);
         return;
@@ -1975,8 +1977,8 @@ static void i82596_self_test(I82596State *s, uint32_t val)
      * The documentation for the self test is a bit unclear,
      * we are currently doing this and it seems to work.
      */
-    set_uint32(val, 0xFFC00000);
-    set_uint32(val + 4, 0);
+    set_uint32(s, val, 0xFFC00000);
+    set_uint32(s, val + 4, 0);
 
     s->scb_status &= ~SCB_STATUS_CNA;
     s->scb_status |= SCB_STATUS_CNA;
@@ -2156,6 +2158,9 @@ static void i82596_flush_queue_timer(void *opaque)
 
 void i82596_common_init(DeviceState *dev, I82596State *s, NetClientInfo *info)
 {
+    if (!s->dma_as) {
+        s->dma_as = &address_space_memory;
+    }
     if (s->conf.macaddr.a[0] == 0) {
         qemu_macaddr_default_if_unset(&s->conf.macaddr);
     }

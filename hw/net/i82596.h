@@ -21,6 +21,8 @@ typedef struct I82596State_st I82596State;
 struct I82596State_st {
     MemoryRegion mmio;
     MemoryRegion *as;
+    AddressSpace *dma_as;       /* defaults to system memory */
+    bool little_endian;         /* memory structures, else big endian */
     qemu_irq irq;
     NICState *nic;
     NICConf conf;
