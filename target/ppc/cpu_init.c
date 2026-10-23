@@ -3261,6 +3261,131 @@ POWERPC_FAMILY(e6500)(ObjectClass *oc, const void *data)
 #endif
 
 /* Non-embedded PowerPC                                                      */
+/* PowerPC 601: POWER/PowerPC bridge with RTC, MQ and unified BATs */
+static void register_601_sprs(CPUPPCState *env)
+{
+    spr_register(env, SPR_MQ, "MQ",
+                 &spr_read_generic, &spr_write_generic,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+    spr_register(env, SPR_601_VRTCU, "RTCU",
+                 &spr_read_601_rtcu, SPR_NOACCESS,
+                 &spr_read_601_rtcu, SPR_NOACCESS,
+                 0x00000000);
+    spr_register(env, SPR_601_VRTCL, "RTCL",
+                 &spr_read_601_rtcl, SPR_NOACCESS,
+                 &spr_read_601_rtcl, SPR_NOACCESS,
+                 0x00000000);
+    spr_register(env, SPR_601_RTCU, "RTCU",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 SPR_NOACCESS, &spr_write_601_rtcu,
+                 0x00000000);
+    spr_register(env, SPR_601_RTCL, "RTCL",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 SPR_NOACCESS, &spr_write_601_rtcl,
+                 0x00000000);
+    spr_register(env, SPR_EAR, "EAR",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+    spr_register(env, SPR_HID0, "HID0",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x80010080);
+    spr_register(env, SPR_HID1, "HID1",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+    spr_register(env, SPR_601_HID2, "HID2",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+    spr_register(env, SPR_601_HID5, "HID5",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+    spr_register(env, SPR_601_HID15, "HID15",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+#if !defined(CONFIG_USER_ONLY)
+    for (int i = 0; i < 4; i++) {
+        spr_register(env, SPR_IBAT0U + 2 * i, "BATU",
+                     SPR_NOACCESS, SPR_NOACCESS,
+                     &spr_read_ibat, &spr_write_601_ubatu,
+                     0x00000000);
+        spr_register(env, SPR_IBAT0L + 2 * i, "BATL",
+                     SPR_NOACCESS, SPR_NOACCESS,
+                     &spr_read_ibat, &spr_write_601_ubatl,
+                     0x00000000);
+    }
+    env->nb_BATs = 4;
+#endif
+}
+
+static void init_excp_601(CPUPPCState *env)
+{
+#if !defined(CONFIG_USER_ONLY)
+    env->excp_vectors[POWERPC_EXCP_RESET]    = 0x00000100;
+    env->excp_vectors[POWERPC_EXCP_MCHECK]   = 0x00000200;
+    env->excp_vectors[POWERPC_EXCP_DSI]      = 0x00000300;
+    env->excp_vectors[POWERPC_EXCP_ISI]      = 0x00000400;
+    env->excp_vectors[POWERPC_EXCP_EXTERNAL] = 0x00000500;
+    env->excp_vectors[POWERPC_EXCP_ALIGN]    = 0x00000600;
+    env->excp_vectors[POWERPC_EXCP_PROGRAM]  = 0x00000700;
+    env->excp_vectors[POWERPC_EXCP_FPU]      = 0x00000800;
+    env->excp_vectors[POWERPC_EXCP_DECR]     = 0x00000900;
+    env->excp_vectors[POWERPC_EXCP_IO]       = 0x00000A00;
+    env->excp_vectors[POWERPC_EXCP_SYSCALL]  = 0x00000C00;
+    env->excp_vectors[POWERPC_EXCP_TRACE]    = 0x00000D00;
+    env->excp_vectors[POWERPC_EXCP_RUNM]     = 0x00002000;
+    env->hreset_vector = 0x00000100UL;
+#endif
+}
+
+static void init_proc_601(CPUPPCState *env)
+{
+    register_non_embedded_sprs(env);
+    register_sdr1_sprs(env);
+    register_601_sprs(env);
+    init_excp_601(env);
+    /* 64-byte lines made of two 32-byte sectors, dcbz clears a sector */
+    env->dcache_line_size = 32;
+    env->icache_line_size = 64;
+    ppc6xx_irq_init(env_archcpu(env));
+}
+
+POWERPC_FAMILY(601)(ObjectClass *oc, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(oc);
+    PowerPCCPUClass *pcc = POWERPC_CPU_CLASS(oc);
+
+    dc->desc = "PowerPC 601";
+    pcc->init_proc = init_proc_601;
+    pcc->check_pow = check_pow_nocheck;
+    pcc->check_attn = check_attn_none;
+    pcc->insns_flags = PPC_INSNS_BASE | PPC_STRING | PPC_POWER_BR |
+                       PPC_FLOAT |
+                       PPC_CACHE | PPC_CACHE_ICBI | PPC_CACHE_DCBZ |
+                       PPC_MEM_SYNC | PPC_MEM_EIEIO | PPC_MEM_TLBIE |
+                       PPC_SEGMENT | PPC_EXTERN;
+    pcc->msr_mask = (1ull << MSR_EE) |
+                    (1ull << MSR_PR) |
+                    (1ull << MSR_FP) |
+                    (1ull << MSR_ME) |
+                    (1ull << MSR_FE0) |
+                    (1ull << MSR_SE) |
+                    (1ull << MSR_FE1) |
+                    (1ull << MSR_EP) |
+                    (1ull << MSR_IR) |
+                    (1ull << MSR_DR);
+    pcc->mmu_model = POWERPC_MMU_32B;
+    pcc->excp_model = POWERPC_EXCP_6xx;
+    pcc->bus_model = PPC_FLAGS_INPUT_6xx;
+    pcc->bfd_mach = bfd_mach_ppc_601;
+    pcc->flags = POWERPC_FLAG_SE | POWERPC_FLAG_BUS_CLK | POWERPC_FLAG_601;
+}
+
 static void init_proc_603(CPUPPCState *env)
 {
     register_non_embedded_sprs(env);

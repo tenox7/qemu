@@ -48,6 +48,22 @@ static target_ulong hash32_bat_size(int mmu_idx,
     return BATU32_BEPI & ~((batu & BATU32_BL) << 15);
 }
 
+static target_ulong hash32_bat_601_size(target_ulong batl)
+{
+    if (!(batl & BATL32_601_V)) {
+        return 0;
+    }
+
+    return BATU32_BEPI & ~((batl & BATL32_601_BL) << 17);
+}
+
+static int hash32_bat_601_prot(int mmu_idx, target_ulong batu)
+{
+    bool key = mmuidx_pr(mmu_idx) ? batu & BATU32_601_KP : batu & BATU32_601_KS;
+
+    return ppc_hash32_prot(key, batu & BATU32_601_PP, false);
+}
+
 static hwaddr ppc_hash32_bat_lookup(PowerPCCPU *cpu, target_ulong ea,
                                     MMUAccessType access_type, int *prot,
                                     int mmu_idx)
@@ -71,7 +87,11 @@ static hwaddr ppc_hash32_bat_lookup(PowerPCCPU *cpu, target_ulong ea,
         target_ulong batl = BATlt[i];
         target_ulong mask;
 
-        mask = hash32_bat_size(mmu_idx, batu, batl);
+        if (env->flags & POWERPC_FLAG_601) {
+            mask = hash32_bat_601_size(batl);
+        } else {
+            mask = hash32_bat_size(mmu_idx, batu, batl);
+        }
         LOG_BATS("%s: %cBAT%d v " TARGET_FMT_lx " BATu " TARGET_FMT_lx
                  " BATl " TARGET_FMT_lx "\n", __func__,
                  ifetch ? 'I' : 'D', i, ea, batu, batl);
@@ -79,7 +99,11 @@ static hwaddr ppc_hash32_bat_lookup(PowerPCCPU *cpu, target_ulong ea,
         if (mask && ((ea & mask) == (batu & BATU32_BEPI))) {
             hwaddr raddr = (batl & mask) | (ea & ~mask);
 
-            *prot = ppc_hash32_bat_prot(batu, batl);
+            if (env->flags & POWERPC_FLAG_601) {
+                *prot = hash32_bat_601_prot(mmu_idx, batu);
+            } else {
+                *prot = ppc_hash32_bat_prot(batu, batl);
+            }
 
             return raddr & TARGET_PAGE_MASK;
         }
@@ -120,6 +144,13 @@ static bool ppc_hash32_direct_store(PowerPCCPU *cpu, target_ulong sr,
     CPUPPCState *env = &cpu->env;
 
     qemu_log_mask(CPU_LOG_MMU, "direct store...\n");
+
+    if ((env->flags & POWERPC_FLAG_601) && ((sr >> 20) & 0x1ff) == 0x07f) {
+        /* Memory-forced I/O controller interface: SR[28-31] || EA[4-31] */
+        *raddr = ((sr & 0xf) << 28) | (eaddr & 0x0fffffff);
+        *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+        return true;
+    }
 
     if (access_type == MMU_INST_FETCH) {
         /* No code fetch is allowed in direct-store areas */
@@ -162,6 +193,9 @@ static bool ppc_hash32_direct_store(PowerPCCPU *cpu, target_ulong sr,
          * no-op, it's quite easy :-)
          */
         *raddr = eaddr;
+        if (env->flags & POWERPC_FLAG_601) {
+            *raddr += PPC601_DIRECT_STORE_BASE;
+        }
         return true;
     case ACCESS_EXT:
         /* eciwx or ecowx */
@@ -176,6 +210,12 @@ static bool ppc_hash32_direct_store(PowerPCCPU *cpu, target_ulong sr,
         return false;
     default:
         cpu_abort(cs, "ERROR: insn should not need address translation\n");
+    }
+
+    if (env->flags & POWERPC_FLAG_601) {
+        *raddr = PPC601_DIRECT_STORE_BASE + eaddr;
+        *prot = PAGE_READ | PAGE_WRITE;
+        return true;
     }
 
     if (ppc_hash32_key(mmuidx_pr(mmu_idx), sr)) {
@@ -333,6 +373,19 @@ bool ppc_hash32_xlate(PowerPCCPU *cpu, vaddr eaddr, MMUAccessType access_type,
 
     /* There are no hash32 large pages. */
     *psizep = TARGET_PAGE_BITS;
+
+    /*
+     * 601 data accesses honour I/O controller interface segments even with
+     * MSR[DT]=0, and those segments take precedence over the BATs.
+     */
+    if ((env->flags & POWERPC_FLAG_601) && access_type != MMU_INST_FETCH) {
+        sr = env->sr[eaddr >> 28];
+        if (sr & SR32_T) {
+            return ppc_hash32_direct_store(cpu, sr, eaddr, access_type,
+                                           raddrp, protp, mmu_idx,
+                                           guest_visible);
+        }
+    }
 
     /* 1. Handle real mode accesses */
     if (mmuidx_real(mmu_idx)) {

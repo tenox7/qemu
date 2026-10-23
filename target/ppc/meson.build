@@ -12,6 +12,7 @@ ppc_ss.add(when: 'CONFIG_TCG', if_true: files(
   'dfp_helper.c',
   'fpu_helper.c',
   'int_helper.c',
+  'power601_helper.c',
   'mem_helper.c',
   'misc_helper.c',
   'tcg-excp_helper.c',

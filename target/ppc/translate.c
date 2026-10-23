@@ -828,6 +828,45 @@ void spr_write_tbu40(DisasContext *ctx, int sprn, int gprn)
 #endif
 
 #if !defined(CONFIG_USER_ONLY)
+/* PowerPC 601 RTC and unified BATs */
+void spr_read_601_rtcl(DisasContext *ctx, int gprn, int sprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_load_601_rtcl(cpu_gpr[gprn], tcg_env);
+}
+
+void spr_read_601_rtcu(DisasContext *ctx, int gprn, int sprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_load_601_rtcu(cpu_gpr[gprn], tcg_env);
+}
+
+void spr_write_601_rtcl(DisasContext *ctx, int sprn, int gprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_store_601_rtcl(tcg_env, cpu_gpr[gprn]);
+}
+
+void spr_write_601_rtcu(DisasContext *ctx, int sprn, int gprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_store_601_rtcu(tcg_env, cpu_gpr[gprn]);
+}
+
+void spr_write_601_ubatu(DisasContext *ctx, int sprn, int gprn)
+{
+    TCGv_i32 t0 = tcg_constant_i32((sprn - SPR_IBAT0U) / 2);
+    gen_helper_store_601_batu(tcg_env, t0, cpu_gpr[gprn]);
+}
+
+void spr_write_601_ubatl(DisasContext *ctx, int sprn, int gprn)
+{
+    TCGv_i32 t0 = tcg_constant_i32((sprn - SPR_IBAT0L) / 2);
+    gen_helper_store_601_batl(tcg_env, t0, cpu_gpr[gprn]);
+}
+#endif
+
+#if !defined(CONFIG_USER_ONLY)
 /* IBAT0U...IBAT0U */
 /* IBAT0L...IBAT7L */
 void spr_read_ibat(DisasContext *ctx, int gprn, int sprn)
@@ -4326,6 +4365,11 @@ static void gen_mtspr(DisasContext *ctx)
     if (likely(write_cb != NULL)) {
         if (likely(write_cb != SPR_NOACCESS)) {
             (*write_cb)(ctx, sprn, rS(ctx->opcode));
+        } else if ((ctx->insns_flags & PPC_POWER_BR) && !ctx->pr) {
+            /* The 601 only traps such writes in user mode */
+            qemu_log_mask(LOG_GUEST_ERROR, "Ignoring write to read-only spr "
+                          "%d (0x%03x) at " TARGET_FMT_lx "\n", sprn, sprn,
+                          ctx->cia);
         } else {
             /* Privilege exception */
             qemu_log_mask(LOG_GUEST_ERROR, "Trying to write privileged spr "
@@ -4388,6 +4432,11 @@ static void gen_dcbf(DisasContext *ctx)
     gen_set_access_type(ctx, ACCESS_CACHE);
     t0 = tcg_temp_new();
     gen_addr_reg_index(ctx, t0);
+#if !defined(CONFIG_USER_ONLY)
+    if (ctx->insns_flags & PPC_POWER_BR) {
+        gen_helper_dcache_discard_601(tcg_env, t0, tcg_constant_i32(1));
+    }
+#endif
     gen_qemu_ld8u(ctx, t0, t0);
 }
 
@@ -4419,6 +4468,9 @@ static void gen_dcbi(DisasContext *ctx)
     /* XXX: specification says this should be treated as a store by the MMU */
     gen_qemu_ld8u(ctx, val, EA);
     gen_qemu_st8(ctx, val, EA);
+    if (ctx->insns_flags & PPC_POWER_BR) {
+        gen_helper_dcache_discard_601(tcg_env, EA, tcg_constant_i32(0));
+    }
 #endif /* defined(CONFIG_USER_ONLY) */
 }
 
@@ -4772,6 +4824,19 @@ static void gen_ecowx(DisasContext *ctx)
     gen_addr_reg_index(ctx, t0);
     tcg_gen_qemu_st_tl(cpu_gpr[rD(ctx->opcode)], t0, ctx->mem_idx,
                        DEF_MEMOP(MO_UL | MO_ALIGN));
+}
+
+/* PowerPC 601 POWER bridge instructions */
+static void gen_power(DisasContext *ctx)
+{
+    gen_set_access_type(ctx, ACCESS_INT);
+    gen_helper_power(tcg_env, tcg_constant_i32(ctx->opcode));
+}
+
+static void gen_clcs(DisasContext *ctx)
+{
+    gen_helper_clcs(cpu_gpr[rD(ctx->opcode)], tcg_env,
+                    tcg_constant_i32(rA(ctx->opcode)));
 }
 
 /* 602 - 603 - G2 TLB management */
@@ -5962,6 +6027,40 @@ GEN_HANDLER(tlbia, 0x1F, 0x12, 0x0B, 0x03FFFC01, PPC_MEM_TLBIA),
  */
 GEN_HANDLER(tlbsync, 0x1F, 0x16, 0x11, 0x03FFF801, PPC_MEM_TLBSYNC),
 GEN_HANDLER(eciwx, 0x1F, 0x16, 0x0D, 0x00000001, PPC_EXTERN),
+GEN_HANDLER2(power, "abs", 0x1F, 0x08, 0x0B, 0x0000F800, PPC_POWER_BR),
+GEN_HANDLER2(power, "abso", 0x1F, 0x08, 0x1B, 0x0000F800, PPC_POWER_BR),
+GEN_HANDLER(clcs, 0x1F, 0x13, 0x10, 0x0000F800, PPC_POWER_BR),
+GEN_HANDLER2(power, "div", 0x1F, 0x0B, 0x0A, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "divo", 0x1F, 0x0B, 0x1A, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "divs", 0x1F, 0x0B, 0x0B, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "divso", 0x1F, 0x0B, 0x1B, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "doz", 0x1F, 0x08, 0x08, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "dozo", 0x1F, 0x08, 0x18, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "dozi", 0x09, 0xFF, 0xFF, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "lscbx", 0x1F, 0x15, 0x08, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "maskg", 0x1F, 0x1D, 0x00, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "maskir", 0x1F, 0x1D, 0x10, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "mul", 0x1F, 0x0B, 0x03, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "mulo", 0x1F, 0x0B, 0x13, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "nabs", 0x1F, 0x08, 0x0F, 0x0000F800, PPC_POWER_BR),
+GEN_HANDLER2(power, "nabso", 0x1F, 0x08, 0x1F, 0x0000F800, PPC_POWER_BR),
+GEN_HANDLER2(power, "rlmi", 0x16, 0xFF, 0xFF, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "rrib", 0x1F, 0x19, 0x10, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sle", 0x1F, 0x19, 0x04, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sleq", 0x1F, 0x19, 0x06, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sliq", 0x1F, 0x18, 0x05, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "slliq", 0x1F, 0x18, 0x07, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sllq", 0x1F, 0x18, 0x06, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "slq", 0x1F, 0x18, 0x04, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sraiq", 0x1F, 0x18, 0x1D, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sraq", 0x1F, 0x18, 0x1C, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sre", 0x1F, 0x19, 0x14, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "srea", 0x1F, 0x19, 0x1C, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sreq", 0x1F, 0x19, 0x16, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "sriq", 0x1F, 0x18, 0x15, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "srliq", 0x1F, 0x18, 0x17, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "srlq", 0x1F, 0x18, 0x16, 0x00000000, PPC_POWER_BR),
+GEN_HANDLER2(power, "srq", 0x1F, 0x18, 0x14, 0x00000000, PPC_POWER_BR),
 GEN_HANDLER(ecowx, 0x1F, 0x16, 0x09, 0x00000001, PPC_EXTERN),
 GEN_HANDLER2(tlbld_6xx, "tlbld", 0x1F, 0x12, 0x1E, 0x03FF0001, PPC_6xx_TLB),
 GEN_HANDLER2(tlbli_6xx, "tlbli", 0x1F, 0x12, 0x1F, 0x03FF0001, PPC_6xx_TLB),

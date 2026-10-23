@@ -537,6 +537,11 @@ void register_generic_sprs(PowerPCCPU *cpu)
         }
     }
 
+    /* The 601 has an RTC instead of a time base */
+    if (env->flags & POWERPC_FLAG_601) {
+        return;
+    }
+
     /* Time base */
 #if defined(TARGET_PPC64)
     spr_register(env, SPR_TBL, "TB",

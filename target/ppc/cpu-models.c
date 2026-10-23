@@ -434,6 +434,10 @@
                     CPU_POWERPC_MPC8641D,     POWERPC_SVR_8641D,     e600)
     /* 32 bits "classic" PowerPC                                             */
     /* PowerPC 6xx family                                                    */
+    POWERPC_DEF("601_v1",        CPU_POWERPC_601_v1,                 601,
+                "PowerPC 601v1")
+    POWERPC_DEF("601_v2",        CPU_POWERPC_601_v2,                 601,
+                "PowerPC 601v2")
     POWERPC_DEF("603",           CPU_POWERPC_603,                    603,
                 "PowerPC 603")
     POWERPC_DEF("603e_v1.1",     CPU_POWERPC_603E_v11,               603E,
@@ -861,6 +865,7 @@ PowerPCCPUAlias ppc_cpu_aliases[] = {
     { "mpc8555", "mpc8555_v11" },
     { "mpc8555e", "mpc8555e_v11" },
     { "mpc8560", "mpc8560_v21" },
+    { "601", "601_v2" },
     { "vanilla", "603" },
     { "603e", "603e_v4.1" },
     { "stretch", "603e_v4.1" },

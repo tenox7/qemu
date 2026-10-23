@@ -593,6 +593,41 @@ void cpu_ppc_store_tbu (CPUPPCState *env, uint32_t value)
     _cpu_ppc_store_tbu(env, value);
 }
 
+/* PowerPC 601 RTC on a 1 GHz time base: RTCU counts seconds, RTCL ns */
+#define RTC601_NS 1000000000ULL
+
+uint32_t cpu_ppc601_load_rtcu(CPUPPCState *env)
+{
+    return cpu_ppc_load_tbl(env) / RTC601_NS;
+}
+
+uint32_t cpu_ppc601_load_rtcl(CPUPPCState *env)
+{
+    return (cpu_ppc_load_tbl(env) % RTC601_NS) & 0x3FFFFF80;
+}
+
+static void cpu_ppc601_store_rtc(CPUPPCState *env, uint64_t value)
+{
+    ppc_tb_t *tb_env = env->tb_env;
+
+    cpu_ppc_store_tb(tb_env, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                     &tb_env->tb_offset, value);
+}
+
+void cpu_ppc601_store_rtcu(CPUPPCState *env, uint32_t value)
+{
+    cpu_ppc601_store_rtc(env, value * RTC601_NS +
+                         cpu_ppc_load_tbl(env) % RTC601_NS);
+}
+
+void cpu_ppc601_store_rtcl(CPUPPCState *env, uint32_t value)
+{
+    uint64_t sec = cpu_ppc_load_tbl(env) / RTC601_NS;
+
+    cpu_ppc601_store_rtc(env, sec * RTC601_NS +
+                         (value & 0x3FFFFF80) % RTC601_NS);
+}
+
 uint64_t cpu_ppc_load_atbl (CPUPPCState *env)
 {
     ppc_tb_t *tb_env = env->tb_env;

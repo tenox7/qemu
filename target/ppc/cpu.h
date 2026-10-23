@@ -107,7 +107,9 @@ enum {
     POWERPC_EXCP_VPU      = 73, /* Vector unavailable exception              */
     /* 40x specific exceptions                                               */
     POWERPC_EXCP_PIT      = 74, /* Programmable interval timer interrupt     */
-    /* Vectors 75-76 are 601 specific exceptions                             */
+    /* 601 specific exceptions                                               */
+    POWERPC_EXCP_IO       = 75, /* IO error exception                        */
+    POWERPC_EXCP_RUNM     = 76, /* Run mode exception                        */
     /* 602 specific exceptions                                               */
     POWERPC_EXCP_EMUL      = 77, /* Emulation trap exception                 */
     /* 602/603 specific exceptions                                           */
@@ -844,6 +846,8 @@ enum {
     POWERPC_FLAG_BHRB      = 0x01000000,
     /* Use PPE42-specific behavior                                           */
     POWERPC_FLAG_PPE42     = 0x02000000,
+    /* PowerPC 601: RTC, POWER bridge, 601 BATs, HID0 LE, direct-store I/O   */
+    POWERPC_FLAG_601       = 0x04000000,
 };
 
 /*
@@ -1367,6 +1371,9 @@ struct CPUArchState {
 
     /* Internal devices resources */
     ppc_tb_t *tb_env;      /* Time base and decrementer */
+    /* 601 boards: dcbi or dcbf (flush) on the cache block at this address */
+    void (*dcache_discard)(void *opaque, hwaddr addr, bool flush);
+    void *dcache_discard_opaque;
     ppc_dcr_t *dcr_env;    /* Device control registers */
 
     int dcache_line_size;
@@ -1686,6 +1693,10 @@ void ppc_fetch_order_switched(CPUPPCState *env, bool old_le);
 uint64_t cpu_ppc_load_tbl(CPUPPCState *env);
 uint32_t cpu_ppc_load_tbu(CPUPPCState *env);
 void cpu_ppc_store_tbu(CPUPPCState *env, uint32_t value);
+uint32_t cpu_ppc601_load_rtcu(CPUPPCState *env);
+uint32_t cpu_ppc601_load_rtcl(CPUPPCState *env);
+void cpu_ppc601_store_rtcu(CPUPPCState *env, uint32_t value);
+void cpu_ppc601_store_rtcl(CPUPPCState *env, uint32_t value);
 void cpu_ppc_store_tbl(CPUPPCState *env, uint32_t value);
 uint64_t cpu_ppc_load_atbl(CPUPPCState *env);
 uint32_t cpu_ppc_load_atbu(CPUPPCState *env);
@@ -1801,15 +1812,26 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define xer_cmp ((env->xer >> XER_CMP) & 0xFF)
 #define xer_bc  ((env->xer >> XER_BC)  & 0x7F)
 
+/*
+ * PowerPC 601 direct-store (T=1) accesses land at this physical offset plus
+ * the effective address; the board decodes them using the live segment
+ * register.
+ */
+#define PPC601_DIRECT_STORE_BASE 0x100000000ULL
+
 /* SPR definitions */
 #define SPR_MQ                (0x000)
 #define SPR_XER               (0x001)
+#define SPR_601_VRTCU         (0x004)
+#define SPR_601_VRTCL         (0x005)
 #define SPR_LR                (0x008)
 #define SPR_CTR               (0x009)
 #define SPR_UAMR              (0x00D)
 #define SPR_DSCR              (0x011)
 #define SPR_DSISR             (0x012)
 #define SPR_DAR               (0x013)
+#define SPR_601_RTCU          (0x014)
+#define SPR_601_RTCL          (0x015)
 #define SPR_DECR              (0x016)
 #define SPR_SDR1              (0x019)
 #define SPR_SRR0              (0x01A)
@@ -2316,6 +2338,7 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_40x_DBSR          (0x3F0)
 #define SPR_HID1              (0x3F1)
 #define SPR_IABR              (0x3F2)
+#define SPR_601_HID2          (0x3F2)
 #define SPR_40x_DBCR0         (0x3F2)
 #define SPR_Exxx_L1CSR0       (0x3F2)
 #define SPR_ICTRL             (0x3F3)
@@ -2329,6 +2352,7 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_MMUCSR0           (0x3F4)
 #define SPR_970_HID4          (0x3F4)
 #define SPR_DABR              (0x3F5)
+#define SPR_601_HID5          (0x3F5)
 #define DABR_MASK (~(target_ulong)0x7)
 #define SPR_Exxx_BUCSR        (0x3F5)
 #define SPR_40x_IAC2          (0x3F5)
@@ -2363,6 +2387,7 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_RCPU_FPECR        (0x3FE)
 #define SPR_403_PBL2          (0x3FE)
 #define SPR_PIR               (0x3FF)
+#define SPR_601_HID15         (0x3FF)
 #define SPR_403_PBU2          (0x3FF)
 #define SPR_604_HID15         (0x3FF)
 #define SPR_E500_SVR          (0x3FF)
@@ -2431,6 +2456,8 @@ enum {
 #define PPC_RES     PPC_INSNS_BASE
     /*   spr/msr access instructions                                         */
 #define PPC_MISC    PPC_INSNS_BASE
+    /*   Power-to-PowerPC bridge (601)                                       */
+    PPC_POWER_BR       = 0x0000000000000010ULL,
     /* 64 bits PowerPC instruction set                                       */
     PPC_64B            = 0x0000000000000020ULL,
     /*   New 64 bits extensions (PowerPC 2.0x)                               */
@@ -2539,7 +2566,7 @@ enum {
     /* popcntw and popcntd instructions                                      */
     PPC_POPCNTWD       = 0x8000000000000000ULL,
 
-#define PPC_TCG_INSNS  (PPC_INSNS_BASE | PPC_64B \
+#define PPC_TCG_INSNS  (PPC_INSNS_BASE | PPC_POWER_BR | PPC_64B \
                         | PPC_64BX | PPC_64H | PPC_WAIT | PPC_MFTB \
                         | PPC_ISEL | PPC_POPCNTB \
                         | PPC_STRING | PPC_FLOAT | PPC_FLOAT_EXT \

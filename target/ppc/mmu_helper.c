@@ -245,6 +245,39 @@ void helper_store_dbatl(CPUPPCState *env, uint32_t nr, target_ulong value)
     env->DBAT[1][nr] = value;
 }
 
+void helper_dcache_discard_601(CPUPPCState *env, target_ulong addr,
+                               uint32_t flush)
+{
+    PowerPCCPU *cpu = env_archcpu(env);
+    hwaddr raddr;
+    int prot, psize;
+
+    if (!env->dcache_discard ||
+        !ppc_xlate(cpu, addr, MMU_DATA_LOAD, &raddr, &psize, &prot,
+                   ppc_env_mmu_index(env, false), false)) {
+        return;
+    }
+    raddr = (raddr & TARGET_PAGE_MASK) | (addr & ~TARGET_PAGE_MASK);
+    env->dcache_discard(env->dcache_discard_opaque, raddr & ~31ULL, flush);
+}
+
+/* The 601 has four unified BAT pairs, kept in both IBAT and DBAT */
+void helper_store_601_batu(CPUPPCState *env, uint32_t nr, target_ulong value)
+{
+    dump_store_bat(env, 'U', 0, nr, value);
+    env->IBAT[0][nr] = value;
+    env->DBAT[0][nr] = value;
+    tlb_flush(env_cpu(env));
+}
+
+void helper_store_601_batl(CPUPPCState *env, uint32_t nr, target_ulong value)
+{
+    dump_store_bat(env, 'U', 1, nr, value);
+    env->IBAT[1][nr] = value;
+    env->DBAT[1][nr] = value;
+    tlb_flush(env_cpu(env));
+}
+
 /*****************************************************************************/
 /* TLB management */
 void ppc_tlb_invalidate_all(CPUPPCState *env)

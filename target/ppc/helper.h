@@ -703,6 +703,8 @@ DEF_HELPER_2(book3s_msgclr, void, env, tl)
 #endif
 
 DEF_HELPER_4(dlmzb, tl, env, tl, tl, i32)
+DEF_HELPER_2(power, void, env, i32)
+DEF_HELPER_FLAGS_2(clcs, TCG_CALL_NO_RWG_SE, tl, env, i32)
 #if !defined(CONFIG_USER_ONLY)
 DEF_HELPER_2(load_dcr, tl, env, tl)
 DEF_HELPER_3(store_dcr, void, env, tl, tl)
@@ -764,6 +766,13 @@ DEF_HELPER_3(store_ibatl, void, env, i32, tl)
 DEF_HELPER_3(store_ibatu, void, env, i32, tl)
 DEF_HELPER_3(store_dbatl, void, env, i32, tl)
 DEF_HELPER_3(store_dbatu, void, env, i32, tl)
+DEF_HELPER_3(store_601_batl, void, env, i32, tl)
+DEF_HELPER_3(store_601_batu, void, env, i32, tl)
+DEF_HELPER_3(dcache_discard_601, void, env, tl, i32)
+DEF_HELPER_FLAGS_1(load_601_rtcl, TCG_CALL_NO_RWG, tl, env)
+DEF_HELPER_FLAGS_1(load_601_rtcu, TCG_CALL_NO_RWG, tl, env)
+DEF_HELPER_FLAGS_2(store_601_rtcl, TCG_CALL_NO_RWG, void, env, tl)
+DEF_HELPER_FLAGS_2(store_601_rtcu, TCG_CALL_NO_RWG, void, env, tl)
 #endif
 
 #define dh_alias_fprp ptr
