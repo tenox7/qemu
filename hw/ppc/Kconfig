@@ -120,6 +120,18 @@ config PREP
 config RS6000_MC
     bool
 
+config RS6K
+    bool
+    default y
+    depends on PPC
+    select SERIAL
+    select FDC_SYSBUS
+    select ISA_BUS
+    select PCI
+    select LSI_SCSI_PCI
+    select MC146818RTC
+    select I82596_COMMON
+
 config MAC_OLDWORLD
     bool
     default y

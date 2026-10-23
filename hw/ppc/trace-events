@@ -176,3 +176,20 @@ ppc4xx_sdram_enable(const char *trace) "%s SDRAM controller"
 ppc4xx_sdram_unmap(uint64_t addr, uint64_t size) "Unmap RAM area 0x%" PRIx64 " size 0x%" PRIx64
 ppc4xx_sdram_map(uint64_t addr, uint64_t size) "Map RAM area 0x%" PRIx64 " size 0x%" PRIx64
 ppc4xx_sdram_init(uint64_t base, uint64_t size, uint32_t bcr) "Init RAM area 0x%" PRIx64 " size 0x%" PRIx64 " bcr 0x%x"
+
+# rs6k_iocc.c
+rs6k_iocc_reg_read(uint32_t addr, uint32_t val) "0x%05x -> 0x%08x"
+rs6k_iocc_reg_write(uint32_t addr, uint64_t val) "0x%05x = 0x%08" PRIx64
+rs6k_iocc_pos_read(int slot, int reg, uint8_t val) "slot %d reg %d -> 0x%02x"
+rs6k_iocc_pos_write(int slot, int reg, uint64_t val) "slot %d reg %d = 0x%02" PRIx64
+rs6k_iocc_dma(int arb, uint32_t addr, uint64_t pa, int to_device) "arb %d addr 0x%08x pa 0x%" PRIx64 " to_device %d"
+
+# rs6k.c
+rs6k_ds(uint32_t sr, uint64_t ea, uint32_t lr) "sr 0x%08x ea 0x%08" PRIx64 " lr 0x%08x"
+rs6k_led(uint32_t code) "LED 0x%03x"
+rs6k_icp_read(uint64_t addr, unsigned size, uint64_t val) "0x%" PRIx64 " size %u -> 0x%" PRIx64
+rs6k_icp_write(uint64_t addr, unsigned size, uint64_t val) "0x%" PRIx64 " size %u = 0x%" PRIx64
+rs6k_sec_read(uint64_t addr, uint32_t val) "0x%02" PRIx64 " -> 0x%08x"
+rs6k_sec_write(uint64_t addr, uint64_t val) "0x%02" PRIx64 " = 0x%08" PRIx64
+rs6k_buc_read(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " -> 0x%" PRIx64
+rs6k_buc_write(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " = 0x%" PRIx64

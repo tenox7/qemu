@@ -72,6 +72,7 @@ ppc_ss.add(when: 'CONFIG_SAM460EX', if_true: files('sam460ex.c'))
 # PReP
 ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep.c'))
 ppc_ss.add(when: 'CONFIG_PREP', if_true: files('prep_systemio.c'))
+ppc_ss.add(when: 'CONFIG_RS6K', if_true: files('rs6k.c', 'rs6k_iocc.c', 'rs6k_sio.c', 'rs6k_scsi.c', 'rs6k_ent.c'))
 ppc_ss.add(when: 'CONFIG_RS6000_MC', if_true: files('rs6000_mc.c'))
 # OldWorld PowerMac
 ppc_ss.add(when: 'CONFIG_MAC_OLDWORLD', if_true: files('mac_oldworld.c'))
