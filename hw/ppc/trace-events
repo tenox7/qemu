@@ -187,12 +187,24 @@ rs6k_iocc_dma(int arb, uint32_t addr, uint64_t pa, int to_device) "arb %d addr 0
 # rs6k.c
 rs6k_ds(uint32_t sr, uint64_t ea, uint32_t lr) "sr 0x%08x ea 0x%08" PRIx64 " lr 0x%08x"
 rs6k_led(uint32_t code) "LED 0x%03x"
+rs6k_sysreg_read(uint64_t addr, unsigned size, uint64_t val, uint32_t lr) "0x%08" PRIx64 " size %u -> 0x%" PRIx64 " lr 0x%08x"
+rs6k_sysreg_write(uint64_t addr, unsigned size, uint64_t val, uint32_t lr) "0x%08" PRIx64 " size %u = 0x%" PRIx64 " lr 0x%08x"
 rs6k_icp_read(uint64_t addr, unsigned size, uint64_t val) "0x%" PRIx64 " size %u -> 0x%" PRIx64
 rs6k_icp_write(uint64_t addr, unsigned size, uint64_t val) "0x%" PRIx64 " size %u = 0x%" PRIx64
 rs6k_sec_read(uint64_t addr, uint32_t val) "0x%02" PRIx64 " -> 0x%08x"
 rs6k_sec_write(uint64_t addr, uint64_t val) "0x%02" PRIx64 " = 0x%08" PRIx64
 rs6k_buc_read(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " -> 0x%" PRIx64
 rs6k_buc_write(int buc, uint64_t addr, uint64_t val) "buc %d 0x%05" PRIx64 " = 0x%" PRIx64
+
+# rs6k_gxt.c
+rs6k_gxt_cfg_read(uint64_t addr, uint32_t val) "0x%04" PRIx64 " -> 0x%08x"
+rs6k_gxt_cfg_write(uint64_t addr, uint32_t val) "0x%04" PRIx64 " = 0x%08x"
+rs6k_gxt_read(uint64_t addr, unsigned size, uint64_t val) "0x%07" PRIx64 " size %u -> 0x%" PRIx64
+rs6k_gxt_write(uint64_t addr, unsigned size, uint64_t val) "0x%07" PRIx64 " size %u = 0x%" PRIx64
+rs6k_gxt_dac_write(uint32_t index, uint8_t val) "index 0x%03x = 0x%02x"
+rs6k_gxt_fifo(uint32_t val) "0x%08x"
+rs6k_gxt_mem_read(uint64_t addr, unsigned size) "0x%07" PRIx64 " size %u"
+rs6k_gxt_mem_write(uint64_t addr, unsigned size, uint64_t val) "0x%07" PRIx64 " size %u = 0x%" PRIx64
 
 # rs6k_kbd.c
 rs6k_kbd_read(uint64_t addr, uint64_t val) "+0x%" PRIx64 " -> 0x%02" PRIx64

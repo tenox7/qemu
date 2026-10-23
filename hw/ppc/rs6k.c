@@ -22,6 +22,7 @@
 #include "hw/ppc/rs6k_sio.h"
 #include "hw/ppc/rs6k_scsi.h"
 #include "hw/ppc/rs6k_ent.h"
+#include "hw/ppc/rs6k_gxt.h"
 #include "hw/core/irq.h"
 #include "hw/isa/isa.h"
 #include "hw/rtc/mc146818rtc.h"
@@ -79,6 +80,9 @@ typedef struct {
     uint32_t ecc_status, ecc_addr;
     Rs6kIOCCState *iocc;
     IcpSrc *iocc_src[IOCC_LEVELS];
+    DeviceState *gxt;
+    IcpSrc *gxt_src;
+    Notifier machine_done;
     ram_addr_t ram_size;
     uint8_t *ram_ptr;
 } Rs6kState;
@@ -488,20 +492,35 @@ static void regfile_write(Rs6kState *s, uint32_t key, uint64_t val,
 #define BUC_ON      0x80000000
 #define BUC_MEMC    2
 #define BUC_IOCC    3
+#define BUC_GXT     4
 #define BUC_KEY(n, off) ((0x10 + (n)) << 24 | (off))
 
 #define MEMC_CTL        0x1004
 #define MEMC_ECC_TEST   0x18000000
 #define MEMC_BANKS      0x1014
 
+/* the feature ROM of the selected bus unit */
+#define FROM_ADDR   0x00a00000
+#define FROM_END    0x00c00000
+
+static bool buc_gxt_selected(Rs6kState *s)
+{
+    return s->gxt && s->buc_sel == (BUC_ON | BUC_GXT);
+}
+
 static uint64_t sysreg_read(void *opaque, hwaddr addr, unsigned size)
 {
     Rs6kState *s = opaque;
-    uint64_t val = regfile_read(s, addr, size);
+    uint64_t val = 0;
 
-    qemu_log_mask(LOG_UNIMP, "rs6k: sysreg read%u 0x%08" HWADDR_PRIx
-                  " -> 0x%" PRIx64 " lr=%08x\n", size * 8, SYSREG_ADDR + addr,
-                  val, (uint32_t)cpu_lr());
+    if (buc_gxt_selected(s) && addr >= FROM_ADDR && addr < FROM_END) {
+        for (unsigned i = 0; i < size; i++) {
+            val = val << 8 | rs6k_gxt_rom_read(s->gxt, addr - FROM_ADDR + i);
+        }
+        return val;
+    }
+    val = regfile_read(s, addr, size);
+    trace_rs6k_sysreg_read(SYSREG_ADDR + addr, size, val, cpu_lr());
     return val;
 }
 
@@ -510,9 +529,7 @@ static void sysreg_write(void *opaque, hwaddr addr, uint64_t val,
 {
     Rs6kState *s = opaque;
 
-    qemu_log_mask(LOG_UNIMP, "rs6k: sysreg write%u 0x%08" HWADDR_PRIx
-                  " = 0x%" PRIx64 " lr=%08x\n", size * 8, SYSREG_ADDR + addr,
-                  val, (uint32_t)cpu_lr());
+    trace_rs6k_sysreg_write(SYSREG_ADDR + addr, size, val, cpu_lr());
     regfile_write(s, addr, val, size);
     if (addr == BUC_SEL && size == 4) {
         s->buc_sel = val;
@@ -541,7 +558,10 @@ static uint64_t buc_read(void *opaque, hwaddr addr, unsigned size)
     Rs6kState *s = opaque;
     uint64_t val = ~0ULL >> (64 - size * 8);
 
-    if (s->buc_sel & BUC_ON) {
+    if (buc_gxt_selected(s)) {
+        val = extract64(rs6k_gxt_cfg_read(s->gxt, addr & ~3),
+                        (4 - (addr & 3) - size) * 8, size * 8);
+    } else if (s->buc_sel & BUC_ON) {
         val = regfile_read(s, BUC_KEY(s->buc_sel & 0xf, addr), size);
     }
     trace_rs6k_buc_read(s->buc_sel & 0xf, addr, val);
@@ -553,7 +573,9 @@ static void buc_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
     Rs6kState *s = opaque;
 
     trace_rs6k_buc_write(s->buc_sel & 0xf, addr, val);
-    if (s->buc_sel & BUC_ON) {
+    if (buc_gxt_selected(s) && size == 4) {
+        rs6k_gxt_cfg_write(s->gxt, addr, val);
+    } else if (s->buc_sel & BUC_ON) {
         regfile_write(s, BUC_KEY(s->buc_sel & 0xf, addr), val, size);
     }
 }
@@ -828,6 +850,30 @@ static void rs6k_init_tod(MemoryRegion *sysmem)
     }
 }
 
+static void rs6k_gxt_present(void *opaque, uint32_t source, uint8_t prio,
+                             bool asserted)
+{
+    Rs6kState *s = opaque;
+
+    s->gxt_src->num = source;
+    if (s->gxt_src->prio != prio || s->gxt_src->asserted != asserted) {
+        icp_set(s, s->gxt_src, prio, asserted);
+    }
+}
+
+/* A GXT150L given with -device sits in the graphics slot, bus unit 4 */
+static void rs6k_machine_done(Notifier *notifier, void *data)
+{
+    Rs6kState *s = container_of(notifier, Rs6kState, machine_done);
+
+    s->gxt = DEVICE(object_resolve_type_unambiguous(TYPE_RS6K_GXT, NULL));
+    if (!s->gxt) {
+        return;
+    }
+    s->gxt_src = icp_add_source(s, 0, true, NULL, NULL);
+    rs6k_gxt_set_presenter(s->gxt, rs6k_gxt_present, s);
+}
+
 static void rs6k_init(MachineState *machine)
 {
     MemoryRegion *sysmem = get_system_memory();
@@ -847,6 +893,8 @@ static void rs6k_init(MachineState *machine)
     /* The 601 RTC and decrementer count nanoseconds */
     cpu_ppc_tb_init(&cpu->env, 1000 * 1000 * 1000);
     qemu_register_reset(rs6k_reset, s);
+    s->machine_done.notify = rs6k_machine_done;
+    qemu_add_machine_init_done_notifier(&s->machine_done);
     cpu->env.dcache_discard = rs6k_dcache_discard;
     cpu->env.dcache_discard_opaque = s;
     s->cpu_irq = qdev_get_gpio_in(DEVICE(cpu), PPC6xx_INPUT_INT);
@@ -936,6 +984,7 @@ static void rs6k_machine_init(MachineClass *mc)
     mc->default_ram_id = "rs6k.ram";
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("601_v1");
     mc->block_default_type = IF_SCSI;
+    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RS6K_GXT);
 }
 
 DEFINE_MACHINE_EXTENDED("7006", MACHINE, Rs6kMachineState, rs6k_machine_init,
