@@ -1,12 +1,13 @@
 #!/bin/sh
 # AIX 3.2.5 on QEMU 7006 (RS/6000 41T) with GXT150L graphics. Boots installer CD while disk is empty.
 # Ctrl-A x quit, Ctrl-A c monitor. Telnet: localhost:2323. CD=media/aix325-vol2.iso picks another CD.
+# LED display and key switch in the panel window (click to turn the key); KEY=service sets it at power-on.
 # Expects qemu/ (aix3 branch of github.com/tenox7/qemu, built) and media/ with aix325-vol1.iso,
 # 11H5778_Microcode_IBM_7006-41T_U5.BIN and GXT150L_88G2832_U35.BIN from
 # http://bitsavers.trailing-edge.com/pdf/ibm/rs6000/firmware/7006-41T_fw/
 cd "$(dirname "$0")" || exit 1
 [ -f aix3.qcow2 ] || qemu/build/qemu-img create -q -f qcow2 aix3.qcow2 2G
-exec qemu/build/qemu-system-ppc -M 7006,nvram=aix3.nvram -m 256 \
+exec qemu/build/qemu-system-ppc -M 7006,nvram=aix3.nvram,key=${KEY:-normal} -m 256 \
   -bios media/11H5778_Microcode_IBM_7006-41T_U5.BIN -icount shift=auto -serial mon:stdio \
   -device gxt150l,romfile=media/GXT150L_88G2832_U35.BIN \
   -nic user,model=rs6k-ent,hostfwd=tcp:127.0.0.1:2323-:23 \
