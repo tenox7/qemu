@@ -32,7 +32,8 @@
  * the origin at 0x80), 0x86 rectangles (x << 16 | y, h << 16 | w), 0x87
  * triangles, 0x8d images (x << 16 | y, h << 16 | w, pixels skipped per row
  * left << 16 | right, then count blocks of rows side by side) and 0xa0
- * copies (source, destination, h << 16 | w).
+ * copies (source, destination, h << 16 | w). 0x11 loads its arguments into
+ * the registers from 0x44 on.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -111,6 +112,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define INT_ALL         0x7
 
 #define COUNT_OPEN      0xffff
+#define CMD_LOAD        0x11
 #define CMD_POINTS      0x80
 #define CMD_POLYLINE    0x82
 #define CMD_SEGMENTS    0x84
@@ -663,6 +665,11 @@ static void gxt_arg(GxtState *s, uint32_t val)
             s->cmd = 0;
         }
         return;
+    case CMD_LOAD:
+        if (REG_FG + 4 * s->nargs <= GXT_REGS_SIZE) {
+            s->regs[REG_FG / 4 + s->nargs - 1] = val;
+        }
+        break;
     case CMD_EXPAND:
         if (s->nargs == 3) {
             s->bits = (s->arg[1] & 0xffff) * (s->arg[1] >> 16) * expand_bpp(s);
@@ -680,6 +687,7 @@ static void gxt_arg(GxtState *s, uint32_t val)
 static bool cmd_known(uint8_t op)
 {
     switch (op) {
+    case CMD_LOAD:
     case CMD_POINTS:
     case CMD_POLYLINE:
     case CMD_SEGMENTS:
