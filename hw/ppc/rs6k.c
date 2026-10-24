@@ -5,6 +5,7 @@
  */
 
 #include "qemu/osdep.h"
+#include <glib/gstdio.h>
 #include "qemu/units.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
@@ -62,6 +63,8 @@ typedef struct {
     uint8_t *ros_image;
     MemoryRegion sysregs;
     MemoryRegion nvram;
+    uint8_t *nvram_data;
+    FILE *nvram_file;
     DeviceState *panel;
     MemoryRegion buc;
     uint32_t buc_sel;
@@ -600,23 +603,71 @@ static const MemoryRegionOps buc_ops = {
  * Battery-backed NVRAM at 0xff600000 holds the ROS configuration, the IPL
  * device list and the AIX error log; the word at 0x300 is the operator
  * panel's LED display. The "nvram" machine property keeps the contents in
- * a file.
+ * a file, written through on every store.
  */
 #define NVRAM_ADDR  0xff600000
 #define NVRAM_SIZE  (32 * KiB)
 #define LED_OFF     0x300
 
+static uint64_t nvram_read(void *opaque, hwaddr addr, unsigned size)
+{
+    Rs6kState *s = opaque;
+
+    return ldn_be_p(s->nvram_data + addr, size);
+}
+
+static void nvram_write(void *opaque, hwaddr addr, uint64_t val,
+                        unsigned size)
+{
+    Rs6kState *s = opaque;
+
+    stn_be_p(s->nvram_data + addr, size, val);
+    if (s->nvram_file &&
+        (fseek(s->nvram_file, addr, SEEK_SET) ||
+         fwrite(s->nvram_data + addr, size, 1, s->nvram_file) != 1 ||
+         fflush(s->nvram_file))) {
+        error_report("cannot write NVRAM file");
+    }
+}
+
+static const MemoryRegionOps nvram_ops = {
+    .read = nvram_read,
+    .write = nvram_write,
+    .endianness = DEVICE_BIG_ENDIAN,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 8,
+    .valid.unaligned = true,
+    .impl.min_access_size = 1,
+    .impl.max_access_size = 8,
+    .impl.unaligned = true,
+};
+
 static void rs6k_init_nvram(Rs6kState *s, MemoryRegion *sysmem,
                             const char *path)
 {
+    s->nvram_data = g_malloc0(NVRAM_SIZE);
     if (path) {
-        memory_region_init_ram_from_file(&s->nvram, NULL, "rs6k.nvram",
-                                         NVRAM_SIZE, 0, RAM_SHARED, path, 0,
-                                         &error_fatal);
-    } else {
-        memory_region_init_ram(&s->nvram, NULL, "rs6k.nvram", NVRAM_SIZE,
-                               &error_fatal);
+        FILE *f = g_fopen(path, "r+b");
+
+        if (!f && errno == ENOENT) {
+            f = g_fopen(path, "w+b");
+        }
+        if (!f) {
+            error_report("cannot open NVRAM file '%s': %s", path,
+                         strerror(errno));
+            exit(1);
+        }
+        /* A new or short file reads as zeros and is filled out */
+        if (fread(s->nvram_data, 1, NVRAM_SIZE, f) < NVRAM_SIZE &&
+            (fseek(f, 0, SEEK_SET) ||
+             fwrite(s->nvram_data, NVRAM_SIZE, 1, f) != 1 || fflush(f))) {
+            error_report("cannot write NVRAM file '%s'", path);
+            exit(1);
+        }
+        s->nvram_file = f;
     }
+    memory_region_init_io(&s->nvram, NULL, &nvram_ops, s, "rs6k.nvram",
+                          NVRAM_SIZE);
     memory_region_add_subregion_overlap(sysmem, NVRAM_ADDR, &s->nvram, 1);
 }
 
