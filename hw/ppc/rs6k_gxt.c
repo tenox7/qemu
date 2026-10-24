@@ -531,31 +531,38 @@ static void gxt_copy(GxtState *s, uint32_t src, uint32_t dst, uint32_t size)
 }
 
 /* Lines far outside the video memory are not walked pixel by pixel */
+/*
+ * Bresenham, both ends drawn. At an exact half the minor coordinate stays
+ * on the side of the start.
+ */
 static void gxt_line(GxtState *s, int x0, int y0, int x1, int y1)
 {
+    int dx = abs(x1 - x0), dy = abs(y1 - y0);
+    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    bool xmajor = dx >= dy;
+    int major = xmajor ? dx : dy, minor = xmajor ? dy : dx;
+    int err = 0;
+    uint8_t fg = reg(s, REG_FG);
+
     if (MAX(x0, x1) < 0 || MAX(y0, y1) < 0 || MIN(x0, x1) >= GXT_PITCH ||
         MIN(y0, y1) >= GXT_LINES) {
         return;
     }
-    int dx = abs(x1 - x0), dy = -abs(y1 - y0);
-    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    uint8_t fg = reg(s, REG_FG);
-
-    gxt_dirty(s, MIN(y0, y1), abs(y1 - y0) + 1);
-    for (;;) {
-        int e2 = 2 * err;
-
+    gxt_dirty(s, MIN(y0, y1), dy + 1);
+    for (int i = 0; i <= major; i++) {
         gxt_pset(s, x0, y0, fg);
-        if (x0 == x1 && y0 == y1) {
-            break;
+        err += 2 * minor;
+        if (err > major) {
+            err -= 2 * major;
+            if (xmajor) {
+                y0 += sy;
+            } else {
+                x0 += sx;
+            }
         }
-        if (e2 >= dy) {
-            err += dy;
+        if (xmajor) {
             x0 += sx;
-        }
-        if (e2 <= dx) {
-            err += dx;
+        } else {
             y0 += sy;
         }
     }
