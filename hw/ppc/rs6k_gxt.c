@@ -449,9 +449,9 @@ static int coord_y(uint32_t v)
 /*
  * Four clip rectangles (min, max pairs), each with a 2-bit field in
  * REG_CLIP_ON: the pixel must be in one of the enabled inside rectangles,
- * if any, and in none of the enabled outside ones. And the low nibble of
- * the clipping planes, masked by bits 8-11 of REG_CLIP_TEST, must equal
- * its bits 12-15.
+ * if any, and in none of the enabled outside ones. And under the mask in
+ * bits 8-11 of REG_CLIP_TEST, the low nibble of the clipping planes must
+ * equal its bits 12-15.
  */
 static bool gxt_clipped(GxtState *s, int x, int y)
 {
@@ -463,7 +463,7 @@ static bool gxt_clipped(GxtState *s, int x, int y)
         return true;
     }
     clip = s->vram_ptr[PLANE_CLIP * GXT_PLANE_SIZE + y * GXT_PITCH + x];
-    if ((clip & test >> 8 & 0xf) != (test >> 12 & 0xf)) {
+    if ((clip ^ test >> 12) & test >> 8 & 0xf) {
         return true;
     }
     for (int i = 0; i < CLIP_RECTS; i++, on >>= 2) {
@@ -1027,6 +1027,7 @@ static void gxt_vram_write(void *opaque, hwaddr addr, uint64_t val,
     GxtState *s = opaque;
     uint8_t mask = reg(s, REG_PLANES);
 
+    trace_rs6k_gxt_mem_write(GXT_VRAM + addr, size, val);
     for (unsigned i = 0; i < size; i++) {
         unsigned o = (addr + i) % GXT_PLANE_SIZE;
         uint8_t *p = s->vram_ptr + addr + i;
