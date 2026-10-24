@@ -13,7 +13,7 @@
  * and 1 during vertical blank; writing 0-0x3c queues command words. 0xd0
  * reads 0x80000 while the FIFO is empty, with the same vertical blank bit.
  * 0x40 is the mode: 1-bit image source in bit 0, transparency in bit 3, the
- * raster op in 0x4c enabled by bit 4, pattern fill in bits 24-25. 0x44 and
+ * raster op in 0x4c enabled by bit 4, pattern fill in bit 24. 0x44 and
  * 0x48 hold the foreground and background colours, 0x50 the plane mask. Four
  * clip rectangles sit at 0x5c-0x78 as min, max pairs (x << 16 | y,
  * inclusive), each with two bits in 0x7c: 3 draws only inside, 2 never.
@@ -96,7 +96,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define MODE_TRANSPARENT 0x00000008
 #define MODE_ROP        0x00000010
 #define MODE_1BIT       0x00000001
-#define MODE_FILL       0x03000000
 #define MODE_STIPPLE    0x01000000
 #define CLIP_RECTS      4
 #define CLIP_INSIDE     0x1
@@ -460,7 +459,7 @@ static void gxt_fill(GxtState *s, uint32_t pos, uint32_t size)
     int x1 = MIN(x + (int)(size & 0xffff), GXT_PITCH);
     int y1 = MIN(y + (int)(size >> 16), GXT_LINES);
     uint8_t fg = reg(s, REG_FG);
-    bool stipple = (reg(s, REG_MODE) & MODE_FILL) == MODE_STIPPLE;
+    bool stipple = reg(s, REG_MODE) & MODE_STIPPLE;
 
     for (int j = MAX(y, 0); j < y1; j++) {
         for (int i = MAX(x, 0); i < x1; i++) {
@@ -565,8 +564,9 @@ static void gxt_triangle(GxtState *s)
 /*
  * Image: count blocks of h rows of w pixels side by side, each block
  * starting on a word. Pixels are bits drawn in the foreground and
- * background colours with MODE_1BIT, else bytes. The left
- * and right skip in the third argument are pixels of each row not drawn.
+ * background colours with MODE_1BIT, else bytes. The left and right skip
+ * in the third argument are pixels of each row of a block not drawn; the
+ * drawn ones of the blocks follow each other from x plus the left skip.
  */
 static unsigned expand_bpp(GxtState *s)
 {
@@ -593,7 +593,7 @@ static void gxt_image(GxtState *s, uint32_t data)
         if (bpp == 1 && !v && !opaque) {
             continue;
         }
-        gxt_pset(s, x + block * vis + col - lskip, y + pix / w,
+        gxt_pset(s, x + block * vis + col, y + pix / w,
                  bpp == 8 ? v : v ? fg : bg);
     }
     s->bit = block * s->bits + (bit < w * h * bpp ? bit : s->bits);
