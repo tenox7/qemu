@@ -10,19 +10,21 @@
  * 0x04000000, the rasterizer at 0x0a000000 and span fills at 0x0d000000.
  *
  * Rasterizer: reading offset 0 gives the free FIFO entries in the high half
- * and 1 during vertical blank; writing 0-0x3c queues command words. 0x40 is
- * the mode: 1-bit image source in bit 0, transparency in bit 3, the raster
- * op in 0x4c enabled by bit 4, pattern fill in bits 24-25. 0x44 and 0x48
- * hold the foreground and background colours, 0x50 the plane mask. Four
+ * and 1 during vertical blank; writing 0-0x3c queues command words. 0xd0
+ * reads 0x80000 while the FIFO is empty, with the same vertical blank bit.
+ * 0x40 is the mode: 1-bit image source in bit 0, transparency in bit 3, the
+ * raster op in 0x4c enabled by bit 4, pattern fill in bits 24-25. 0x44 and
+ * 0x48 hold the foreground and background colours, 0x50 the plane mask. Four
  * clip rectangles sit at 0x5c-0x78 as min, max pairs (x << 16 | y,
  * inclusive), each with two bits in 0x7c: 3 draws only inside, 2 never.
  * 0x100-0x11c hold a 16x16 pattern. Reading 0xb8 returns and clears the
  * pending interrupts: vertical retrace 0x10000, fetch done 0x20000, idle
  * 0x40000. Writing it sets their enables in bits 0-2 and clears the pending
- * ones given in bits 4-6. 0xc0 and 0xc8 select a RAMDAC register, 0xc4 and
- * 0xcc access it with auto increment; the RAMDAC holds the CRTC timing, the
- * cursor and from 0x600 the palette, one entry per index taking red, green
- * and blue in turn.
+ * ones given in bits 4-6. 0xc0 and 0xc8 hold the low and high byte of a
+ * RAMDAC register index, 0xc4 and 0xcc access it with auto increment. The
+ * RAMDAC holds the CRTC timing and the cursor below 0x600 and colours from
+ * there, one entry per index taking red, green and blue in turn: the
+ * palette at 0x600 and the cursor colours at 0xa10.
  *
  * Command words have bit 31 set, the opcode in bits 24-31 and a count in
  * the low half; 0xffff makes the argument list run until 0xd4 is written.
@@ -88,6 +90,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define REG_DAC_DATA    0xc4
 #define REG_DAC_HI      0xc8
 #define REG_DAC_PAL     0xcc
+#define REG_STATUS      0xd0
 #define REG_END         0xd4
 
 #define MODE_TRANSPARENT 0x00000008
@@ -101,6 +104,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 
 #define STAT_FREE       0x02000000
 #define STAT_VBLANK     0x1
+#define STATUS_EMPTY    0x00080000
 
 #define INT_VBLANK      0x1
 #define INT_FETCH       0x2
@@ -119,6 +123,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 /* RAMDAC registers */
 #define DAC_CTRL        0x02
 #define DAC_SENSE       0x05
+#define SENSE_1280      0xaa
 #define DAC_HDISP       0x15
 #define DAC_VDISP       0x1f
 #define DAC_CURSOR_ON   0x30
@@ -127,8 +132,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define DAC_CURSOR_X    0x34
 #define DAC_CURSOR_Y    0x36
 #define DAC_CURSOR_IMG  0x100
-#define DAC_CURSOR_COL  0xa0e
 #define DAC_PALETTE     0x600
+#define DAC_CURSOR_COL  0xa10
+#define DAC_COLOURS     (GXT_DAC_SIZE - DAC_PALETTE)
 #define CURSOR_DIM      64
 #define CTRL_VIDEO      0x01
 
@@ -152,8 +158,8 @@ struct GxtState {
 
     uint32_t regs[GXT_REGS_SIZE / 4];
     uint16_t dac_index;
-    uint8_t dac[GXT_DAC_SIZE];
-    uint8_t palette[256][3];
+    uint8_t dac[DAC_PALETTE];
+    uint8_t palette[DAC_COLOURS][3];
     unsigned pal_comp;
     bool vblank;
     uint8_t int_enable;
@@ -255,9 +261,15 @@ static unsigned gxt_height(GxtState *s)
     return (s->dac[DAC_VDISP] | (s->dac[DAC_VDISP + 1] << 8)) + 1;
 }
 
+/* The index registers keep all 16 bits, of which the RAMDAC decodes 12 */
+static unsigned dac_addr(GxtState *s)
+{
+    return s->dac_index % GXT_DAC_SIZE;
+}
+
 static bool dac_is_palette(GxtState *s)
 {
-    return s->dac_index >= DAC_PALETTE && s->dac_index < DAC_PALETTE + 256;
+    return dac_addr(s) >= DAC_PALETTE;
 }
 
 /* Palette entries take red, green and blue in turn, like a VGA DAC */
@@ -266,10 +278,11 @@ static void dac_write(GxtState *s, uint8_t val)
     trace_rs6k_gxt_dac_write(s->dac_index, val);
     s->full_update = true;
     if (!dac_is_palette(s)) {
-        s->dac[s->dac_index++ % GXT_DAC_SIZE] = val;
+        s->dac[dac_addr(s)] = val;
+        s->dac_index++;
         return;
     }
-    s->palette[s->dac_index - DAC_PALETTE][s->pal_comp] = val;
+    s->palette[dac_addr(s) - DAC_PALETTE][s->pal_comp] = val;
     if (++s->pal_comp == 3) {
         s->pal_comp = 0;
         s->dac_index++;
@@ -278,16 +291,17 @@ static void dac_write(GxtState *s, uint8_t val)
 
 /*
  * The RAMDAC is a byte-wide device: reads return the byte on every lane.
- * The monitor ID pins read as open, which AIX takes for 1280x1024.
+ * The monitor ID pins read 0xaa whatever the syncs do: a 1280x1024 60 Hz
+ * display. Open pins would read 0xff, which the diagnostics reject.
  */
 static uint8_t dac_read(GxtState *s)
 {
-    unsigned i = s->dac_index % GXT_DAC_SIZE;
+    unsigned i = dac_addr(s);
     uint8_t val;
 
     if (!dac_is_palette(s)) {
         s->dac_index++;
-        return i == DAC_SENSE ? 0xff : s->dac[i];
+        return i == DAC_SENSE ? SENSE_1280 : s->dac[i];
     }
     val = s->palette[i - DAC_PALETTE][s->pal_comp];
     if (++s->pal_comp == 3) {
@@ -295,6 +309,13 @@ static uint8_t dac_read(GxtState *s)
         s->dac_index++;
     }
     return val;
+}
+
+/* Vertical blank shows on every other status read */
+static uint32_t gxt_retrace(GxtState *s)
+{
+    s->vblank = !s->vblank;
+    return s->vblank ? STAT_VBLANK : 0;
 }
 
 static void gxt_vblank(void *opaque)
@@ -707,11 +728,19 @@ static uint64_t gxt_reg_read(void *opaque, hwaddr addr, unsigned size)
     }
     switch (addr) {
     case REG_FIFO:
-        s->vblank = !s->vblank;
-        val = STAT_FREE | (s->vblank ? STAT_VBLANK : 0);
+        val = STAT_FREE | gxt_retrace(s);
+        break;
+    case REG_STATUS:
+        val = STATUS_EMPTY | gxt_retrace(s);
         break;
     case REG_INT:
         val = gxt_int_read(s);
+        break;
+    case REG_DAC_LO:
+        val = (s->dac_index & 0xff) * 0x01010101U;
+        break;
+    case REG_DAC_HI:
+        val = (s->dac_index >> 8) * 0x01010101U;
         break;
     case REG_DAC_DATA:
     case REG_DAC_PAL:
@@ -761,12 +790,15 @@ static void gxt_reg_write(void *opaque, hwaddr addr, uint64_t val,
     s->regs[addr >> 2] = val;
 }
 
+/* The diagnostics reach the RAMDAC registers a byte at a time too */
 static const MemoryRegionOps gxt_reg_ops = {
     .read = gxt_reg_read,
     .write = gxt_reg_write,
     .endianness = DEVICE_BIG_ENDIAN,
-    .valid.min_access_size = 4,
+    .valid.min_access_size = 1,
     .valid.max_access_size = 4,
+    .impl.min_access_size = 4,
+    .impl.max_access_size = 4,
 };
 
 /*
@@ -835,8 +867,8 @@ static int dac_word(GxtState *s, unsigned i)
 
 /*
  * The hardware cursor: 64x64 pixels of 2 bits, leftmost in the high bits,
- * at its position less the hot spot. Values 1-3 take the colours at 0xa0e,
- * 0xa11 and 0xa14; 0 is transparent.
+ * at its position less the hot spot. Values 1-3 take the colours at 0xa10,
+ * 0xa11 and 0xa12; 0 is transparent.
  */
 static int cursor_top(GxtState *s)
 {
@@ -851,6 +883,7 @@ static void gxt_draw_cursor(GxtState *s, DisplaySurface *surface)
     int x0 = dac_word(s, DAC_CURSOR_X) - s->dac[DAC_HOT_X];
     int y0 = cursor_top(s);
     int w = surface_width(surface), h = surface_height(surface);
+    const uint8_t (*colour)[3] = &s->palette[DAC_CURSOR_COL - DAC_PALETTE - 1];
 
     for (int cy = 0; cy < CURSOR_DIM; cy++) {
         uint32_t *dst = (uint32_t *)surface_data(surface) + (y0 + cy) * w;
@@ -861,7 +894,7 @@ static void gxt_draw_cursor(GxtState *s, DisplaySurface *surface)
         for (int cx = 0; cx < CURSOR_DIM; cx++) {
             uint8_t b = s->dac[DAC_CURSOR_IMG + cy * 16 + cx / 4];
             unsigned v = (b >> (6 - 2 * (cx % 4))) & 3;
-            const uint8_t *rgb = s->dac + DAC_CURSOR_COL + 3 * (v - 1);
+            const uint8_t *rgb = colour[v];
 
             if (v && x0 + cx >= 0 && x0 + cx < w) {
                 dst[x0 + cx] = rgb[0] << 16 | rgb[1] << 8 | rgb[2];
