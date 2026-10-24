@@ -122,6 +122,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define CMD_COPY        0xa0
 
 /* RAMDAC registers */
+#define DAC_MISC        0x01
 #define DAC_CTRL        0x02
 #define DAC_SENSE       0x05
 #define SENSE_1280      0xaa
@@ -135,9 +136,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define DAC_CURSOR_IMG  0x100
 #define DAC_PALETTE     0x600
 #define DAC_CURSOR_COL  0xa10
+#define DAC_MISR        0xb00
 #define DAC_COLOURS     (GXT_DAC_SIZE - DAC_PALETTE)
 #define CURSOR_DIM      64
 #define CTRL_VIDEO      0x01
+#define MISC_MISR       0x40
+#define MISR_POLY       0x87
 
 #define VBLANK_NS       (NANOSECONDS_PER_SECOND / 60)
 
@@ -291,6 +295,34 @@ static void dac_write(GxtState *s, uint8_t val)
 }
 
 /*
+ * The MISR signs a frame: the colour of every displayed pixel goes into a
+ * 24-bit Galois LFSR with feedback 0x87 (x^24 + x^7 + x^2 + x + 1) started
+ * from all ones. It reads back inverted as the colour entry at 0xb00, here
+ * worked out when read while enabled in the misc register.
+ */
+static void gxt_misr(GxtState *s)
+{
+    unsigned w = MIN(gxt_width(s), GXT_PITCH);
+    unsigned h = MIN(gxt_height(s), GXT_LINES);
+    uint8_t *sig = s->palette[DAC_MISR - DAC_PALETTE];
+    uint32_t m = 0xffffff;
+
+    for (unsigned y = 0; y < h; y++) {
+        const uint8_t *src = s->vram_ptr + y * GXT_PITCH;
+
+        for (unsigned x = 0; x < w; x++) {
+            const uint8_t *rgb = s->palette[src[x]];
+
+            m = (m << 1 & 0xffffff) ^ (m >> 23 ? MISR_POLY : 0) ^
+                (rgb[0] << 16 | rgb[1] << 8 | rgb[2]);
+        }
+    }
+    sig[0] = ~m >> 16;
+    sig[1] = ~m >> 8;
+    sig[2] = ~m;
+}
+
+/*
  * The RAMDAC is a byte-wide device: reads return the byte on every lane.
  * The monitor ID pins read 0xaa whatever the syncs do: a 1280x1024 60 Hz
  * display. Open pins would read 0xff, which the diagnostics reject.
@@ -303,6 +335,9 @@ static uint8_t dac_read(GxtState *s)
     if (!dac_is_palette(s)) {
         s->dac_index++;
         return i == DAC_SENSE ? SENSE_1280 : s->dac[i];
+    }
+    if (i == DAC_MISR && !s->pal_comp && (s->dac[DAC_MISC] & MISC_MISR)) {
+        gxt_misr(s);
     }
     val = s->palette[i - DAC_PALETTE][s->pal_comp];
     if (++s->pal_comp == 3) {
