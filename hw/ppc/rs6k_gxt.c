@@ -6,8 +6,10 @@
  * 0xffa00000. AIX writes the base of its 256 MB window to configuration
  * register 0x18, the BUID to 0x08 and the interrupt priority and level to
  * 0x1000 and 0x1004; the adapter interrupts as source (BUID << 4) | level.
- * In the window, 2 MB of 8-bit video memory 2048 pixels wide sit at
- * 0x04000000, the rasterizer at 0x0a000000 and span fills at 0x0d000000.
+ * In the window, four planes of 2 MB of 8-bit video memory 2048 pixels
+ * wide sit from 0x04000000: frame buffers A and B, the window IDs in the
+ * high nibble and overlay in the low one, and the clipping planes.
+ * The rasterizer is at 0x0a000000 and span fills at 0x0d000000.
  *
  * Rasterizer: reading offset 0 gives the free FIFO entries in the high half
  * and 1 during vertical blank; writing 0-0x3c queues command words. 0xd0
@@ -62,9 +64,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define GXT_ROM_SIZE    (64 * KiB)
 #define GXT_WIN_SIZE    (256 * MiB)
 #define GXT_VRAM        0x04000000
-#define GXT_VRAM_SIZE   (2 * MiB)
+#define GXT_PLANE_SIZE  (2 * MiB)
+#define GXT_PLANES      4
+#define GXT_VRAM_SIZE   (GXT_PLANES * GXT_PLANE_SIZE)
+#define PLANE_WID       2
+#define PLANE_CLIP      3
 #define GXT_PITCH       2048
-#define GXT_LINES       (GXT_VRAM_SIZE / GXT_PITCH)
+#define GXT_LINES       (GXT_PLANE_SIZE / GXT_PITCH)
 #define GXT_REGS        0x0a000000
 #define GXT_SPAN        0x0d000000
 #define GXT_SPAN_SIZE   (8 * MiB)
@@ -89,8 +95,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define REG_CLIP        0x5c
 #define REG_CLIP_ON     0x7c
 #define REG_ORIGIN      0x80
+#define REG_CLIP_TEST   0x84
 #define REG_PATTERN     0x100
 #define REG_INT         0xb8
+#define REG_CONFIG      0xbc
 #define REG_DAC_LO      0xc0
 #define REG_DAC_DATA    0xc4
 #define REG_DAC_HI      0xc8
@@ -102,6 +110,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define MODE_ROP        0x00000010
 #define MODE_1BIT       0x00000001
 #define MODE_STIPPLE    0x01000000
+#define MODE_DEST       0x00000380
+#define MODE_DEST_SHIFT 7
 #define CLIP_RECTS      4
 #define CLIP_INSIDE     0x1
 #define CLIP_ENABLE     0x2
@@ -143,12 +153,16 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define DAC_CURSOR_X    0x34
 #define DAC_CURSOR_Y    0x36
 #define DAC_CURSOR_IMG  0x100
+#define DAC_WAT         0x500
 #define DAC_PALETTE     0x600
 #define DAC_CURSOR_COL  0xa10
 #define DAC_MISR        0xb00
 #define DAC_COLOURS     (GXT_DAC_SIZE - DAC_PALETTE)
 #define CURSOR_DIM      64
 #define CTRL_VIDEO      0x01
+#define WAT_BUFFER_B    0x01
+#define WAT_LUT_SHIFT   6
+#define CONFIG_WID      0x20
 #define MISC_MISR       0x40
 #define MISR_POLY       0x87
 
@@ -207,6 +221,11 @@ static uint32_t *cfg_word(GxtState *s, hwaddr addr)
 static uint32_t cfg_get(GxtState *s, hwaddr addr)
 {
     return *cfg_word(s, addr);
+}
+
+static uint32_t reg(GxtState *s, hwaddr addr)
+{
+    return s->regs[addr >> 2];
 }
 
 static void gxt_update_irq(GxtState *s)
@@ -305,6 +324,21 @@ static void dac_write(GxtState *s, uint8_t val)
 }
 
 /*
+ * A pixel's colour: its window ID picks a WAT entry, which picks the frame
+ * buffer in bit 0 and the palette, of four, in bits 6-7. The IDs only show
+ * with bit 5 of the memory configuration, else every pixel takes entry 0.
+ */
+static const uint8_t *gxt_colour(GxtState *s, unsigned o)
+{
+    uint8_t id = reg(s, REG_CONFIG) & CONFIG_WID ?
+                 s->vram_ptr[PLANE_WID * GXT_PLANE_SIZE + o] >> 4 : 0;
+    uint8_t wat = s->dac[DAC_WAT + 2 * id];
+    uint8_t px = s->vram_ptr[(wat & WAT_BUFFER_B) * GXT_PLANE_SIZE + o];
+
+    return s->palette[(wat >> WAT_LUT_SHIFT) * 256 + px];
+}
+
+/*
  * The MISR signs a frame: the colour of every displayed pixel goes into a
  * 24-bit Galois LFSR with feedback 0x87 (x^24 + x^7 + x^2 + x + 1) started
  * from all ones. It reads back inverted as the colour entry at 0xb00, here
@@ -318,10 +352,8 @@ static void gxt_misr(GxtState *s)
     uint32_t m = 0xffffff;
 
     for (unsigned y = 0; y < h; y++) {
-        const uint8_t *src = s->vram_ptr + y * GXT_PITCH;
-
         for (unsigned x = 0; x < w; x++) {
-            const uint8_t *rgb = s->palette[src[x]];
+            const uint8_t *rgb = gxt_colour(s, y * GXT_PITCH + x);
 
             m = (m << 1 & 0xffffff) ^ (m >> 23 ? MISR_POLY : 0) ^
                 (rgb[0] << 16 | rgb[1] << 8 | rgb[2]);
@@ -404,11 +436,6 @@ static void gxt_dirty(GxtState *s, int y, int h)
     }
 }
 
-static uint32_t reg(GxtState *s, hwaddr addr)
-{
-    return s->regs[addr >> 2];
-}
-
 static int coord_x(uint32_t v)
 {
     return (int16_t)(v >> 16);
@@ -422,14 +449,21 @@ static int coord_y(uint32_t v)
 /*
  * Four clip rectangles (min, max pairs), each with a 2-bit field in
  * REG_CLIP_ON: the pixel must be in one of the enabled inside rectangles,
- * if any, and in none of the enabled outside ones.
+ * if any, and in none of the enabled outside ones. And the low nibble of
+ * the clipping planes, masked by bits 8-11 of REG_CLIP_TEST, must equal
+ * its bits 12-15.
  */
 static bool gxt_clipped(GxtState *s, int x, int y)
 {
-    uint32_t on = reg(s, REG_CLIP_ON);
+    uint32_t on = reg(s, REG_CLIP_ON), test = reg(s, REG_CLIP_TEST);
     bool inside_any = false, in = false;
+    uint8_t clip;
 
     if (x < 0 || y < 0 || x >= GXT_PITCH || y >= GXT_LINES) {
+        return true;
+    }
+    clip = s->vram_ptr[PLANE_CLIP * GXT_PLANE_SIZE + y * GXT_PITCH + x];
+    if ((clip & test >> 8 & 0xf) != (test >> 12 & 0xf)) {
         return true;
     }
     for (int i = 0; i < CLIP_RECTS; i++, on >>= 2) {
@@ -476,6 +510,18 @@ static uint8_t gxt_rop(uint8_t alu, uint8_t src, uint8_t dst)
     return src;
 }
 
+/*
+ * The plane drawn into, from bits 7-9 of the mode: 0 frame buffer A, 1 B,
+ * 2 the clipping planes, 3 the overlay and 4 the window IDs
+ */
+static uint8_t *gxt_dest(GxtState *s)
+{
+    static const uint8_t plane[8] = { 0, 1, PLANE_CLIP, PLANE_WID, PLANE_WID };
+    unsigned d = (reg(s, REG_MODE) & MODE_DEST) >> MODE_DEST_SHIFT;
+
+    return s->vram_ptr + plane[d] * GXT_PLANE_SIZE;
+}
+
 static void gxt_pset(GxtState *s, int x, int y, uint8_t c)
 {
     uint8_t mask = reg(s, REG_PLANES);
@@ -484,7 +530,7 @@ static void gxt_pset(GxtState *s, int x, int y, uint8_t c)
     if (gxt_clipped(s, x, y)) {
         return;
     }
-    p = s->vram_ptr + y * GXT_PITCH + x;
+    p = gxt_dest(s) + y * GXT_PITCH + x;
     if (reg(s, REG_MODE) & MODE_ROP) {
         c = gxt_rop(reg(s, REG_ROP), c, *p);
     }
@@ -539,7 +585,7 @@ static void gxt_copy(GxtState *s, uint32_t src, uint32_t dst, uint32_t size)
                 continue;
             }
             gxt_pset(s, dx + x, dy + y,
-                     s->vram_ptr[(sy + y) * GXT_PITCH + sx + x]);
+                     gxt_dest(s)[(sy + y) * GXT_PITCH + sx + x]);
         }
     }
     gxt_dirty(s, dy, h);
@@ -1114,16 +1160,19 @@ static bool gxt_update_display(void *opaque)
     snap = memory_region_snapshot_and_clear_dirty(&s->vram, 0, GXT_VRAM_SIZE,
                                                   DIRTY_MEMORY_VGA);
     for (unsigned y = 0; y < h; y++) {
-        const uint8_t *src = s->vram_ptr + y * GXT_PITCH;
         uint32_t *dst = (uint32_t *)surface_data(surface) + y * w;
+        bool dirty = s->full_update;
 
-        if (!s->full_update &&
-            !memory_region_snapshot_get_dirty(&s->vram, snap, y * GXT_PITCH,
-                                              w)) {
+        /* buffers A and B and the window IDs show */
+        for (int p = 0; p <= PLANE_WID && !dirty; p++) {
+            dirty = memory_region_snapshot_get_dirty(&s->vram, snap,
+                        p * GXT_PLANE_SIZE + y * GXT_PITCH, w);
+        }
+        if (!dirty) {
             continue;
         }
         for (unsigned x = 0; x < w; x++) {
-            const uint8_t *rgb = s->palette[src[x]];
+            const uint8_t *rgb = gxt_colour(s, y * GXT_PITCH + x);
 
             dst[x] = rgb[0] << 16 | rgb[1] << 8 | rgb[2];
         }
