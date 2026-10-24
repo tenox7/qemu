@@ -31,10 +31,11 @@
  * the low half; 0xffff makes the argument list run until 0xd4 is written.
  * 0x80 points, 0x82 polyline and 0x84 segments (vertices x << 16 | y from
  * the origin at 0x80), 0x86 rectangles (x << 16 | y, h << 16 | w), 0x87
- * triangles, 0x8d images (x << 16 | y, h << 16 | w, pixels skipped per row
- * left << 16 | right, then count blocks of rows side by side) and 0xa0
- * copies (source, destination, h << 16 | w). 0x11 loads its arguments into
- * the registers from 0x44 on.
+ * triangles and 0x88 quadrilaterals (vertices from the origin), 0x8d
+ * images (x << 16 | y, h << 16 | w, pixels skipped per row left << 16 |
+ * right, then count blocks of rows side by side) and 0xa0 copies (source,
+ * destination, h << 16 | w). 0x11 loads its arguments into the registers
+ * from 0x44 on.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -119,6 +120,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define CMD_SEGMENTS    0x84
 #define CMD_FILL        0x86
 #define CMD_TRIANGLE    0x87
+#define CMD_QUAD        0x88
 #define CMD_EXPAND      0x8d
 #define CMD_COPY        0xa0
 
@@ -491,20 +493,26 @@ static bool gxt_pattern(GxtState *s, int x, int y)
     return row & (0x8000 >> (x & 15));
 }
 
-static void gxt_fill(GxtState *s, uint32_t pos, uint32_t size)
+/* One row of an area fill, from x0 to x1 inclusive */
+static void gxt_span(GxtState *s, int x0, int x1, int y)
 {
-    int x = coord_x(pos), y = coord_y(pos);
-    int x1 = MIN(x + (int)(size & 0xffff), GXT_PITCH);
-    int y1 = MIN(y + (int)(size >> 16), GXT_LINES);
     uint8_t fg = reg(s, REG_FG);
     bool stipple = reg(s, REG_MODE) & MODE_STIPPLE;
 
-    for (int j = MAX(y, 0); j < y1; j++) {
-        for (int i = MAX(x, 0); i < x1; i++) {
-            if (!stipple || gxt_pattern(s, i, j)) {
-                gxt_pset(s, i, j, fg);
-            }
+    for (int i = MAX(x0, 0); i <= MIN(x1, GXT_PITCH - 1); i++) {
+        if (!stipple || gxt_pattern(s, i, y)) {
+            gxt_pset(s, i, y, fg);
         }
+    }
+}
+
+static void gxt_fill(GxtState *s, uint32_t pos, uint32_t size)
+{
+    int x = coord_x(pos), y = coord_y(pos);
+    int y1 = MIN(y + (int)(size >> 16), GXT_LINES);
+
+    for (int j = MAX(y, 0); j < y1; j++) {
+        gxt_span(s, x, x + (int)(size & 0xffff) - 1, j);
     }
     gxt_dirty(s, y, y1 - y);
 }
@@ -575,32 +583,51 @@ static void gxt_vertex(GxtState *s, uint32_t v, int *x, int *y)
     *y = coord_y(v) + coord_y(reg(s, REG_ORIGIN));
 }
 
-static void gxt_triangle(GxtState *s)
+/* floor(a / b) for b > 0 */
+static int64_t floor_div(int64_t a, int64_t b)
 {
-    int x[3], y[3], ymin, ymax;
-    uint8_t fg = reg(s, REG_FG);
+    return a >= 0 ? a / b : -((b - 1 - a) / b);
+}
 
-    for (int i = 0; i < 3; i++) {
+/*
+ * Triangles and convex quadrilaterals fill X style: a pixel is drawn if
+ * its centre is inside, or on a left or top edge. Each edge a to b, taken
+ * clockwise, keeps the pixels with (bx - ax)(y - ay) - (by - ay)(x - ax)
+ * above zero, or at zero on a left or top edge.
+ */
+static void gxt_polygon(GxtState *s, int n)
+{
+    int x[4], y[4], ymin = INT_MAX, ymax = INT_MIN;
+    int64_t area = 0;
+
+    for (int i = 0; i < n; i++) {
         gxt_vertex(s, s->arg[i], &x[i], &y[i]);
+        ymin = MIN(ymin, y[i]);
+        ymax = MAX(ymax, y[i]);
     }
-    ymin = MAX(MIN(y[0], MIN(y[1], y[2])), 0);
-    ymax = MIN(MAX(y[0], MAX(y[1], y[2])), GXT_LINES - 1);
+    for (int i = 0; i < n; i++) {
+        area += (int64_t)x[i] * y[(i + 1) % n] - (int64_t)x[(i + 1) % n] * y[i];
+    }
+    ymin = MAX(ymin, 0);
+    ymax = MIN(ymax, GXT_LINES - 1);
     for (int j = ymin; j <= ymax; j++) {
-        int xl = INT_MAX, xr = INT_MIN;
+        int64_t xl = 0, xr = GXT_PITCH - 1;
 
-        for (int e = 0; e < 3; e++) {
-            int ax = x[e], ay = y[e], bx = x[(e + 1) % 3], by = y[(e + 1) % 3];
-            int xi;
+        for (int e = 0; e < n; e++) {
+            int a = area < 0 ? (e + 1) % n : e, b = area < 0 ? e : (e + 1) % n;
+            int64_t dx = x[b] - x[a], dy = y[b] - y[a];
+            int64_t k = dx * (j - y[a]) + dy * x[a];
 
-            if ((j < ay && j < by) || (j > ay && j > by)) {
-                continue;
+            if (dy > 0) {
+                xr = MIN(xr, floor_div(k - 1, dy));
+            } else if (dy < 0) {
+                xl = MAX(xl, -floor_div(k, -dy));
+            } else if (dx > 0 ? k < 0 : k <= 0) {
+                xr = -1;
             }
-            xi = ay == by ? MIN(ax, bx) : ax + (bx - ax) * (j - ay) / (by - ay);
-            xl = MIN(xl, ay == by ? MIN(ax, bx) : xi);
-            xr = MAX(xr, ay == by ? MAX(ax, bx) : xi);
         }
-        for (int i = MAX(xl, 0); i <= MIN(xr, GXT_PITCH - 1); i++) {
-            gxt_pset(s, i, j, fg);
+        if (xl <= xr) {
+            gxt_span(s, xl, xr, j);
         }
     }
     gxt_dirty(s, ymin, ymax - ymin + 1);
@@ -678,8 +705,9 @@ static void gxt_arg(GxtState *s, uint32_t val)
         }
         return;
     case CMD_TRIANGLE:
-        if (s->nargs == 3) {
-            gxt_triangle(s);
+    case CMD_QUAD:
+        if (s->nargs == (op == CMD_QUAD ? 4 : 3)) {
+            gxt_polygon(s, s->nargs);
             s->nargs = 0;
             gxt_next(s);
         }
@@ -736,6 +764,7 @@ static bool cmd_known(uint8_t op)
     case CMD_SEGMENTS:
     case CMD_FILL:
     case CMD_TRIANGLE:
+    case CMD_QUAD:
     case CMD_EXPAND:
     case CMD_COPY:
         return true;
