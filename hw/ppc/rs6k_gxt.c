@@ -451,19 +451,21 @@ static int coord_y(uint32_t v)
  * REG_CLIP_ON: the pixel must be in one of the enabled inside rectangles,
  * if any, and in none of the enabled outside ones. And under the mask in
  * bits 8-11 of REG_CLIP_TEST, the low nibble of the clipping planes must
- * equal its bits 12-15.
+ * equal its bits 12-15, as must the window ID under bits 0-3 bits 4-7.
  */
 static bool gxt_clipped(GxtState *s, int x, int y)
 {
     uint32_t on = reg(s, REG_CLIP_ON), test = reg(s, REG_CLIP_TEST);
     bool inside_any = false, in = false;
-    uint8_t clip;
+    uint8_t clip, id;
 
     if (x < 0 || y < 0 || x >= GXT_PITCH || y >= GXT_LINES) {
         return true;
     }
     clip = s->vram_ptr[PLANE_CLIP * GXT_PLANE_SIZE + y * GXT_PITCH + x];
-    if ((clip ^ test >> 12) & test >> 8 & 0xf) {
+    id = s->vram_ptr[PLANE_WID * GXT_PLANE_SIZE + y * GXT_PITCH + x] >> 4;
+    if ((clip ^ test >> 12) & test >> 8 & 0xf ||
+        (!(test & 0xff00) && (id ^ test >> 4) & test & 0xf)) {
         return true;
     }
     for (int i = 0; i < CLIP_RECTS; i++, on >>= 2) {
