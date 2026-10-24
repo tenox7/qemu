@@ -34,8 +34,10 @@
  * triangles and 0x88 quadrilaterals (vertices from the origin), 0x8d
  * images (x << 16 | y, h << 16 | w, pixels skipped per row left << 16 |
  * right, then count blocks of rows side by side) and 0xa0 copies (source,
- * destination, h << 16 | w). 0x11 loads its arguments into the registers
- * from 0x44 on.
+ * destination, h << 16 | w). 0x81, 0x83 and 0x85 are points, polyline and
+ * segments with a colour before each point, vertex or segment; 0xa1 draws
+ * lines from Bresenham terms (k1, k2, e, start, end). 0x11 loads its
+ * arguments into the registers from 0x44 on.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -116,13 +118,17 @@ OBJECT_DECLARE_SIMPLE_TYPE(GxtState, RS6K_GXT)
 #define COUNT_OPEN      0xffff
 #define CMD_LOAD        0x11
 #define CMD_POINTS      0x80
+#define CMD_POINTS_C    0x81
 #define CMD_POLYLINE    0x82
+#define CMD_POLYLINE_C  0x83
 #define CMD_SEGMENTS    0x84
+#define CMD_SEGMENTS_C  0x85
 #define CMD_FILL        0x86
 #define CMD_TRIANGLE    0x87
 #define CMD_QUAD        0x88
 #define CMD_EXPAND      0x8d
 #define CMD_COPY        0xa0
+#define CMD_LINE        0xa1
 
 /* RAMDAC registers */
 #define DAC_MISC        0x01
@@ -180,7 +186,8 @@ struct GxtState {
     uint32_t last;
     unsigned count;
     unsigned nargs;
-    uint32_t arg[4];
+    uint32_t arg[8];
+    uint8_t colour;
     uint32_t bit, bits;
     int x, y;
 
@@ -540,39 +547,57 @@ static void gxt_copy(GxtState *s, uint32_t src, uint32_t dst, uint32_t size)
 
 /* Lines far outside the video memory are not walked pixel by pixel */
 /*
- * Bresenham, both ends drawn. At an exact half the minor coordinate stays
- * on the side of the start.
+ * Bresenham, both ends drawn: the minor coordinate steps while the error e
+ * is not negative, adding k2 then and k1 otherwise.
  */
-static void gxt_line(GxtState *s, int x0, int y0, int x1, int y1)
+static void gxt_bresenham(GxtState *s, int x0, int y0, int x1, int y1,
+                          int k1, int k2, int e, uint8_t c)
 {
     int dx = abs(x1 - x0), dy = abs(y1 - y0);
     int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
     bool xmajor = dx >= dy;
-    int major = xmajor ? dx : dy, minor = xmajor ? dy : dx;
-    int err = 0;
-    uint8_t fg = reg(s, REG_FG);
 
     if (MAX(x0, x1) < 0 || MAX(y0, y1) < 0 || MIN(x0, x1) >= GXT_PITCH ||
         MIN(y0, y1) >= GXT_LINES) {
         return;
     }
     gxt_dirty(s, MIN(y0, y1), dy + 1);
-    for (int i = 0; i <= major; i++) {
-        gxt_pset(s, x0, y0, fg);
-        err += 2 * minor;
-        if (err > major) {
-            err -= 2 * major;
+    for (int i = 0; i <= MAX(dx, dy); i++) {
+        gxt_pset(s, x0, y0, c);
+        if (e >= 0) {
+            e += k2;
             if (xmajor) {
                 y0 += sy;
             } else {
                 x0 += sx;
             }
+        } else {
+            e += k1;
         }
         if (xmajor) {
             x0 += sx;
         } else {
             y0 += sy;
         }
+    }
+}
+
+/*
+ * Lines between vertices go left to right, or top down when steep, from
+ * e = 2 minor - major - 1, k1 = 2 minor and k2 = 2 (minor - major): at an
+ * exact half the minor coordinate stays on the side of the start.
+ */
+static void gxt_line(GxtState *s, int x0, int y0, int x1, int y1, uint8_t c)
+{
+    int dx = abs(x1 - x0), dy = abs(y1 - y0);
+    int major = MAX(dx, dy), minor = MIN(dx, dy);
+
+    if (dx >= dy ? x1 < x0 : y1 < y0) {
+        gxt_bresenham(s, x1, y1, x0, y0, 2 * minor, 2 * (minor - major),
+                      2 * minor - major - 1, c);
+    } else {
+        gxt_bresenham(s, x0, y0, x1, y1, 2 * minor, 2 * (minor - major),
+                      2 * minor - major - 1, c);
     }
 }
 
@@ -688,7 +713,7 @@ static void gxt_arg(GxtState *s, uint32_t val)
     uint8_t op = s->cmd >> 24;
     int x, y;
 
-    s->arg[s->nargs++ % 4] = val;
+    s->arg[s->nargs++ % ARRAY_SIZE(s->arg)] = val;
     switch (op) {
     case CMD_FILL:
         if (s->nargs == 2) {
@@ -720,7 +745,7 @@ static void gxt_arg(GxtState *s, uint32_t val)
     case CMD_POLYLINE:
         gxt_vertex(s, val, &x, &y);
         if (s->nargs > 1) {
-            gxt_line(s, s->x, s->y, x, y);
+            gxt_line(s, s->x, s->y, x, y, reg(s, REG_FG));
         }
         s->x = x;
         s->y = y;
@@ -728,12 +753,56 @@ static void gxt_arg(GxtState *s, uint32_t val)
     case CMD_SEGMENTS:
         gxt_vertex(s, val, &x, &y);
         if (s->nargs % 2 == 0) {
-            gxt_line(s, s->x, s->y, x, y);
+            gxt_line(s, s->x, s->y, x, y, reg(s, REG_FG));
         }
         s->x = x;
         s->y = y;
         if (s->nargs == 2 * s->count) {
             s->cmd = 0;
+        }
+        return;
+    case CMD_POLYLINE_C:
+        /* a colour, then a vertex the line goes to in it */
+        if (s->nargs % 2) {
+            s->colour = val;
+            return;
+        }
+        gxt_vertex(s, val, &x, &y);
+        if (s->nargs > 2) {
+            gxt_line(s, s->x, s->y, x, y, s->colour);
+        }
+        s->x = x;
+        s->y = y;
+        if (s->nargs == 2 * s->count) {
+            s->cmd = 0;
+        }
+        return;
+    case CMD_POINTS_C:
+        if (s->nargs == 2) {
+            gxt_vertex(s, s->arg[1], &x, &y);
+            gxt_pset(s, x, y, s->arg[0]);
+            gxt_dirty(s, y, 1);
+            s->nargs = 0;
+            gxt_next(s);
+        }
+        return;
+    case CMD_SEGMENTS_C:
+        if (s->nargs == 3) {
+            gxt_vertex(s, s->arg[1], &s->x, &s->y);
+            gxt_vertex(s, s->arg[2], &x, &y);
+            gxt_line(s, s->x, s->y, x, y, s->arg[0]);
+            s->nargs = 0;
+            gxt_next(s);
+        }
+        return;
+    case CMD_LINE:
+        if (s->nargs == 5) {
+            gxt_vertex(s, s->arg[3], &s->x, &s->y);
+            gxt_vertex(s, s->arg[4], &x, &y);
+            gxt_bresenham(s, s->x, s->y, x, y, s->arg[0], s->arg[1],
+                          s->arg[2], reg(s, REG_FG));
+            s->nargs = 0;
+            gxt_next(s);
         }
         return;
     case CMD_LOAD:
@@ -760,13 +829,17 @@ static bool cmd_known(uint8_t op)
     switch (op) {
     case CMD_LOAD:
     case CMD_POINTS:
+    case CMD_POINTS_C:
     case CMD_POLYLINE:
+    case CMD_POLYLINE_C:
     case CMD_SEGMENTS:
+    case CMD_SEGMENTS_C:
     case CMD_FILL:
     case CMD_TRIANGLE:
     case CMD_QUAD:
     case CMD_EXPAND:
     case CMD_COPY:
+    case CMD_LINE:
         return true;
     }
     return false;
