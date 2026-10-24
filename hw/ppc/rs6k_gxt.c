@@ -1017,6 +1017,36 @@ static const MemoryRegionOps gxt_reg_ops = {
 };
 
 /*
+ * Stores to video memory go through the rasterizer's pixel path: the clip
+ * rectangles and planes and the write mask apply to them as to drawing.
+ * Loads come straight from memory.
+ */
+static void gxt_vram_write(void *opaque, hwaddr addr, uint64_t val,
+                           unsigned size)
+{
+    GxtState *s = opaque;
+    uint8_t mask = reg(s, REG_PLANES);
+
+    for (unsigned i = 0; i < size; i++) {
+        unsigned o = (addr + i) % GXT_PLANE_SIZE;
+        uint8_t *p = s->vram_ptr + addr + i;
+        uint8_t b = val >> (8 * (size - 1 - i));
+
+        if (!gxt_clipped(s, o % GXT_PITCH, o / GXT_PITCH)) {
+            *p = (*p & ~mask) | (b & mask);
+        }
+    }
+    memory_region_set_dirty(&s->vram, addr, size);
+}
+
+static const MemoryRegionOps gxt_vram_ops = {
+    .write = gxt_vram_write,
+    .endianness = DEVICE_BIG_ENDIAN,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 8,
+};
+
+/*
  * Span fills: a word written at (y << 13) | (x << 2) fills the width in its
  * low half from (x, y) as the 0x86 command would.
  */
@@ -1216,6 +1246,7 @@ static void gxt_reset(DeviceState *dev)
     s->int_pending = 0;
     s->cmd = 0;
     s->dac[DAC_CTRL] = 0;
+    s->regs[REG_PLANES >> 2] = 0xff;
     s->full_update = true;
     gxt_update_irq(s);
 }
@@ -1231,8 +1262,8 @@ static void gxt_realize(DeviceState *dev, Error **errp)
     }
     memory_region_init_io(&s->window, OBJECT(dev), &gxt_unknown_ops, s,
                           "gxt150l.window", GXT_WIN_SIZE);
-    if (!memory_region_init_ram(&s->vram, OBJECT(dev), "gxt150l.vram",
-                                GXT_VRAM_SIZE, errp)) {
+    if (!memory_region_init_rom_device(&s->vram, OBJECT(dev), &gxt_vram_ops, s,
+                                       "gxt150l.vram", GXT_VRAM_SIZE, errp)) {
         return;
     }
     memory_region_set_log(&s->vram, true, DIRTY_MEMORY_VGA);
