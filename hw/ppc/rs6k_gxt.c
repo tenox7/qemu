@@ -18,10 +18,11 @@
  * clip rectangles sit at 0x5c-0x78 as min, max pairs (x << 16 | y,
  * inclusive), each with two bits in 0x7c: 3 draws only inside, 2 never.
  * 0x100-0x11c hold a 16x16 pattern. Reading 0xb8 returns and clears the
- * pending interrupts: vertical retrace 0x10000, fetch done 0x20000, idle
- * 0x40000. Writing it sets their enables in bits 0-2 and clears the pending
- * ones given in bits 4-6. 0xc0 and 0xc8 hold the low and high byte of a
- * RAMDAC register index, 0xc4 and 0xcc access it with auto increment. The
+ * pending interrupts: vertical retrace 0x10000, fetch done 0x20000 (the last
+ * word of a command taken), idle 0x40000. Writing it sets their enables in
+ * bits 0-2 and clears the pending ones given in bits 4-6. 0xc0 and 0xc8
+ * hold the low and high byte of a RAMDAC register index, 0xc4 and 0xcc
+ * access it with auto increment. The
  * RAMDAC holds the CRTC timing and the cursor below 0x600 and colours from
  * there, one entry per index taking red, green and blue in turn: the
  * palette at 0x600 and the cursor colours at 0xa10.
@@ -735,6 +736,19 @@ static bool cmd_known(uint8_t op)
     return false;
 }
 
+/*
+ * The last word of a command was taken. Like idle this only shows when
+ * enabled: AIX takes any pending bit for a finished DMA blit.
+ */
+static void gxt_fetched(GxtState *s)
+{
+    s->cmd = 0;
+    if (s->int_enable & INT_FETCH) {
+        s->int_pending |= INT_FETCH;
+        gxt_update_irq(s);
+    }
+}
+
 static void gxt_fifo(GxtState *s, uint32_t val)
 {
     trace_rs6k_gxt_fifo(val);
@@ -756,9 +770,12 @@ static void gxt_fifo(GxtState *s, uint32_t val)
     }
     if (s->cmd >> 24 == CMD_EXPAND && s->nargs == 3) {
         gxt_image(s, val);
-        return;
+    } else {
+        gxt_arg(s, val);
     }
-    gxt_arg(s, val);
+    if (!s->cmd) {
+        gxt_fetched(s);
+    }
 }
 
 static uint64_t gxt_reg_read(void *opaque, hwaddr addr, unsigned size)
@@ -811,7 +828,7 @@ static void gxt_reg_write(void *opaque, hwaddr addr, uint64_t val,
         gxt_int_write(s, val);
         return;
     case REG_END:
-        s->cmd = 0;
+        gxt_fetched(s);
         return;
     case REG_DAC_LO:
         s->dac_index = (s->dac_index & 0xff00) | val >> 24;
