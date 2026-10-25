@@ -308,6 +308,18 @@ static Notifier prep_machine_done_notifier = {
     .notify = prep_machine_done,
 };
 
+static bool ibm_40p_panel;
+
+static bool ibm_40p_get_panel(Object *obj, Error **errp)
+{
+    return ibm_40p_panel;
+}
+
+static void ibm_40p_set_panel(Object *obj, bool value, Error **errp)
+{
+    ibm_40p_panel = value;
+}
+
 static bool nvram_kept(Nvram *nvram)
 {
     return object_property_get_bool(OBJECT(nvram), "persistent", NULL);
@@ -402,6 +414,17 @@ static void ibm_40p_init(MachineState *machine)
     isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
     qdev_connect_gpio_out(dev, 0, qdev_get_gpio_in(DEVICE(pcihost), 0));
+
+    if (ibm_40p_panel) {
+        DeviceState *panel = DEVICE(isa_new("prep-panel"));
+
+        panel->id = g_strdup("panel");
+        object_property_add_child(OBJECT(machine), "front-panel",
+                                  OBJECT(panel));
+        isa_realize_and_unref(ISA_DEVICE(panel), isa_bus, &error_fatal);
+        qdev_connect_gpio_out_named(dev, "hardfile-light", 0,
+                                    qdev_get_gpio_in(panel, 0));
+    }
 
     /* Memory controller */
     isa_dev = isa_new("rs6000-mc");
@@ -565,6 +588,10 @@ static void ibm_40p_machine_init(MachineClass *mc)
     compat_props_add(mc->compat_props, compat, G_N_ELEMENTS(compat));
 
     machine_add_audiodev_property(mc);
+    object_class_property_add_bool(OBJECT_CLASS(mc), "panel",
+                                   ibm_40p_get_panel, ibm_40p_set_panel);
+    object_class_property_set_description(OBJECT_CLASS(mc), "panel",
+        "Front panel window with the lights and firmware progress codes");
 }
 
 DEFINE_MACHINE("40p", ibm_40p_machine_init)

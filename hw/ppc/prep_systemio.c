@@ -46,6 +46,7 @@ struct PrepSystemIoState {
     MemoryRegion ppc_parity_mem;
 
     qemu_irq non_contiguous_io_map_irq;
+    qemu_irq hardfile_light;
     uint8_t sreset; /* 0x0092 */
     uint8_t equipment; /* 0x080c */
     uint8_t system_control; /* 0x081c */
@@ -93,7 +94,10 @@ enum {
 
 static void prep_port0808_write(void *opaque, uint32_t addr, uint32_t val)
 {
+    PrepSystemIoState *s = opaque;
+
     trace_prep_systemio_write(addr, val);
+    qemu_set_irq(s->hardfile_light, val & PORT0808_HARDFILE_LIGHT_ON);
 }
 
 /* PORT 0810 -- Password Protect 1 Register (Write Only) */
@@ -261,6 +265,7 @@ static void prep_systemio_realize(DeviceState *dev, Error **errp)
     PrepSystemIoState *s = PREP_SYSTEMIO(dev);
 
     qdev_init_gpio_out(dev, &s->non_contiguous_io_map_irq, 1);
+    qdev_init_gpio_out_named(dev, &s->hardfile_light, "hardfile-light", 1);
     s->iomap_type = PORT0850_IOMAP_NONCONTIGUOUS;
     qemu_set_irq(s->non_contiguous_io_map_irq,
                  s->iomap_type & PORT0850_IOMAP_NONCONTIGUOUS);
