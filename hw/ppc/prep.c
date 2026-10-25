@@ -361,9 +361,11 @@ static void ibm_40p_init(MachineState *machine)
         exit(1);
     }
 
-    /* Set time-base frequency to 100 Mhz */
-    /* TODO: verify against real machine!! divide by 4, fixes Solaris. */
-    cpu_ppc_tb_init(env, 100UL * 1000UL * 1000UL / 4);
+    /*
+     * The IBM firmware tells the OS in the residual data that the bus runs
+     * at 60 MHz with 4 bus clocks per time-base tick, so 15 MHz.
+     */
+    cpu_ppc_tb_init(env, 60UL * 1000UL * 1000UL / 4);
     qemu_register_reset(ppc_prep_reset, cpu);
 
     /* allocate and load firmware */
