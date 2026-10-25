@@ -1,24 +1,32 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
 set -e
-[ $# -eq 4 ] || { echo "usage: $0 nt|os2|solaris VMDIR BINDIR OUT.tar.lz" >&2; exit 1; }
+[ $# -eq 4 ] || { echo "usage: $0 nt|os2|solaris|aix41|aix43 VMDIR BINDIR OUT.tar.lz" >&2; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 os=$1 vm=$2 bin=$3 out=$4
 case $os in
 nt) name=nt40powerpc-qemu disk=nt40 nvram=nvram.bin ;;
 os2) name=os2powerpc-qemu disk=os2 nvram=nvram-os2.bin ;;
 solaris) name=sol251powerpc-qemu disk=sol251 nvram=nvram-sol.bin ;;
+aix41) name=aix415rs6k-qemu disk=aix415 nvram=nvram.bin ;;
+aix43) name=aix433rs6k-qemu disk=aix433 nvram=nvram43.bin ;;
 *) echo "unknown OS: $os" >&2; exit 1 ;;
+esac
+img=$vm/disk/$disk.qcow2 fw=$vm/fw
+# the AIX VM directory keeps its disks and firmware at the top
+case $os in
+aix41) img=$vm/aix415.qcow2 fw=$vm ;;
+aix43) img=$vm/aix433-gfx.qcow2 fw=$vm ;;
 esac
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
 r=$t/$name
 mkdir -p "$r/bin/share/qemu/keymaps" "$r/fw"
 
-qemu-img convert -O qcow2 "$vm/disk/$disk.qcow2" "$r/$disk.qcow2"
+qemu-img convert -O qcow2 "$img" "$r/$disk.qcow2"
 cp "$vm/$nvram" "$r/nvram.bin"
-cp "$vm/fw/P12H0456.IMG" "$r/fw/"
-[ $os = nt ] && cp "$vm/fw/gxt110p.bin" "$r/fw/"
+cp "$fw/P12H0456.IMG" "$r/fw/"
+case $os in nt|aix*) cp "$fw/gxt110p.bin" "$r/fw/" ;; esac
 [ $os = os2 ] && cp "$vm/disk/os2ppc.iso" "$r/"
 for f in "$here/$os"/*; do
     case $f in
