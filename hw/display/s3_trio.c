@@ -1041,6 +1041,10 @@ static uint32_t s3_vga_rd(S3TrioState *s, uint32_t port)
             return s3_cr_read(s, vga->cr_index);
         }
         break;
+    case 0x3bb:
+    case 0x3db:
+        /* AIX reads input status 1 as a halfword, which has it in both bytes */
+        return vga->st01;
     }
     return vga_ioport_read(vga, port);
 }
