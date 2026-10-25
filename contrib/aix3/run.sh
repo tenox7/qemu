@@ -1,6 +1,6 @@
 #!/bin/sh
 # AIX 3.2.5 on QEMU 7006 (RS/6000 41T) with GXT150L graphics. Boots installer CD while disk is empty.
-# Ctrl-A x quit, Ctrl-A c monitor. Telnet: localhost:2323. CD=media/aix325-vol2.iso picks another CD.
+# Ctrl-A x quit, Ctrl-A c monitor. Telnet: localhost:2323, rsh: 2514. CD=media/aix325-vol2.iso picks another CD.
 # LED display and key switch in the panel window (click to turn the key); KEY=service sets it at power-on.
 # Expects qemu/ (aix3 branch of github.com/tenox7/qemu, built) and media/ with aix325-vol1.iso,
 # 11H5778_Microcode_IBM_7006-41T_U5.BIN and GXT150L_88G2832_U35.BIN from
@@ -12,7 +12,7 @@ export SDL_MOUSE_FOCUS_CLICKTHROUGH=1
 exec qemu/build/qemu-system-ppc -M 7006,nvram=aix3.nvram,key=${KEY:-normal} -m 256 \
   -bios media/11H5778_Microcode_IBM_7006-41T_U5.BIN -icount shift=auto -serial mon:stdio \
   -device gxt150l,romfile=media/GXT150L_88G2832_U35.BIN \
-  -nic user,model=rs6k-ent,hostfwd=tcp:127.0.0.1:2323-:23 \
+  -nic user,model=rs6k-ent,hostfwd=tcp:127.0.0.1:2323-:23,hostfwd=tcp:127.0.0.1:2514-:514 \
   -drive file=aix3.qcow2,if=none,id=hd0,format=qcow2 -device scsi-hd,drive=hd0,scsi-id=0 \
   -drive file="${CD:-media/aix325-vol1.iso}",if=none,id=cd0,media=cdrom,format=raw,readonly=on \
   -device scsi-cd,drive=cd0,scsi-id=3 "$@"
