@@ -574,6 +574,7 @@ static void ibm_40p_machine_init(MachineClass *mc)
         { TYPE_ISA_FDC, "seek-latency-us", "1000" },
         { TYPE_MC146818_RTC, "base_year", "2000" },
         { TYPE_MC146818_RTC, "century-byte", "off" },
+        { "scsi-cd", "quirk_mode_sense_rom_use_dbd", "on" },
     };
 
     mc->desc = "IBM RS/6000 7020 (40p)",
