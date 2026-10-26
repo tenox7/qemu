@@ -2264,9 +2264,7 @@ static bool trans_amask(DisasContext *s, arg_amask *a)
 
     vb = read_cpu_reg_lit(s, a->rb, a->lit, a->islit);
     vc = cpu_reg(s, a->rc);
-    if (s->isa_procid > PROCID_EV45) {
-        tcg_gen_andi_i64(vc, vb, ~s->isa_amask);
-    }
+    tcg_gen_andi_i64(vc, vb, ~s->isa_amask);
     return true;
 }
 
