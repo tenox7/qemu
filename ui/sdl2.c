@@ -61,6 +61,12 @@ static Notifier mouse_mode_notifier;
 #define SDL2_REFRESH_INTERVAL_BUSY 10
 #define SDL2_MAX_IDLE_COUNT (2 * GUI_REFRESH_INTERVAL_DEFAULT \
                              / SDL2_REFRESH_INTERVAL_BUSY + 1)
+/*
+ * While grabbed, read input every millisecond and not only at each refresh,
+ * so that each host mouse report reaches the guest on its own and on time.
+ */
+#define SDL2_INPUT_INTERVAL 1
+static QEMUTimer *sdl2_input_timer;
 
 /* introduced in SDL 2.0.10 */
 #ifndef SDL_HINT_RENDER_BATCHING
@@ -273,6 +279,7 @@ static void sdl_grab_start(struct sdl2_console *scon)
     }
     SDL_SetWindowGrab(scon->real_window, SDL_TRUE);
     gui_grab = 1;
+    timer_mod(sdl2_input_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME));
     sdl_update_caption(scon);
 }
 
@@ -280,6 +287,7 @@ static void sdl_grab_end(struct sdl2_console *scon)
 {
     SDL_SetWindowGrab(scon->real_window, SDL_FALSE);
     gui_grab = 0;
+    timer_del(sdl2_input_timer);
     sdl_show_cursor(scon);
     sdl_update_caption(scon);
 }
@@ -668,16 +676,12 @@ static void handle_windowevent(SDL_Event *ev)
     }
 }
 
-void sdl2_poll_events(struct sdl2_console *scon)
+/* returns 1 if there was no keyboard or mouse input */
+static int sdl2_handle_events(struct sdl2_console *scon)
 {
     SDL_Event ev1, *ev = &ev1;
     bool allow_close = true;
     int idle = 1;
-
-    if (scon->last_vm_running != runstate_is_running()) {
-        scon->last_vm_running = runstate_is_running();
-        sdl_update_caption(scon);
-    }
 
     while (SDL_PollEvent(ev)) {
         switch (ev->type) {
@@ -722,7 +726,36 @@ void sdl2_poll_events(struct sdl2_console *scon)
             break;
         }
     }
+    return idle;
+}
 
+static void sdl2_input_poll(void *opaque)
+{
+    int i;
+
+    if (!sdl2_handle_events(sdl2_console)) {
+        for (i = 0; i < sdl2_num_outputs; i++) {
+            sdl2_console[i].idle_counter = 0;
+            qemu_console_listener_set_refresh(&sdl2_console[i].dcl,
+                                              SDL2_REFRESH_INTERVAL_BUSY);
+        }
+    }
+    if (gui_grab) {
+        timer_mod(sdl2_input_timer,
+                  qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + SDL2_INPUT_INTERVAL);
+    }
+}
+
+void sdl2_poll_events(struct sdl2_console *scon)
+{
+    int idle;
+
+    if (scon->last_vm_running != runstate_is_running()) {
+        scon->last_vm_running = runstate_is_running();
+        sdl_update_caption(scon);
+    }
+
+    idle = sdl2_handle_events(scon);
     if (idle) {
         if (scon->idle_counter < SDL2_MAX_IDLE_COUNT) {
             scon->idle_counter++;
@@ -957,6 +990,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
         return;
     }
     sdl2_console = g_new0(struct sdl2_console, sdl2_num_outputs);
+    sdl2_input_timer = timer_new_ms(QEMU_CLOCK_REALTIME, sdl2_input_poll, NULL);
     for (i = 0; i < sdl2_num_outputs; i++) {
         QemuConsole *con = qemu_console_lookup_by_index(i);
         const DisplayChangeListenerOps *ops = &dcl_2d_ops;
