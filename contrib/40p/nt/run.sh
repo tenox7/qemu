@@ -7,6 +7,8 @@ Linux-x86_64) q=bin/linux-x86_64/qemu-system-ppc ;;
 Linux-aarch64) q=bin/linux-aarch64/qemu-system-ppc ;;
 *) echo "No QEMU binary for $(uname -sm)" >&2; exit 1 ;;
 esac
+# SDL on macOS drops the click that focuses a window
+export SDL_MOUSE_FOCUS_CLICKTHROUGH=1
 exec "$q" \
  -M 40p -m 128 \
  -bios fw/P12H0456.IMG \

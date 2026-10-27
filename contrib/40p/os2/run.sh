@@ -70,6 +70,8 @@ boot() {
 
 rm -f $LOG $SOCK
 (export LC_ALL=C; while [ ! -S $SOCK ]; do sleep 0.1; done; boot | nc -U $SOCK > /dev/null) &
+# SDL on macOS drops the click that focuses a window
+export SDL_MOUSE_FOCUS_CLICKTHROUGH=1
 exec "$q" \
  -M 40p -m 128 \
  -bios fw/P12H0456.IMG \
