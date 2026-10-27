@@ -94,6 +94,7 @@ struct PS2MouseState {
     int mouse_dz;
     int mouse_dw;
     uint8_t mouse_buttons;
+    uint8_t mouse_sent_buttons; /* buttons in the last queued packet */
 };
 
 #define TYPE_PS2_MOUSE_DEVICE "ps2-mouse"
