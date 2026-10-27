@@ -90,6 +90,15 @@ typedef struct S3GE {
     uint32_t dirty_lo, dirty_hi;
 } S3GE;
 
+/* everything that changes how the hardware cursor looks on screen */
+typedef struct S3HWCursor {
+    uint8_t cr[0x50 - 0x45];
+    uint8_t cr55;
+    uint32_t fg, bg;
+    int y, h;
+    uint8_t image[1024];
+} S3HWCursor;
+
 struct S3TrioState {
     PCIDevice parent_obj;
     VGACommonState vga;
@@ -100,7 +109,7 @@ struct S3TrioState {
     uint8_t sr_index;
     uint32_t hwc_fg, hwc_bg;
     uint8_t hwc_stack;
-    int hwc_last_y, hwc_last_h;
+    S3HWCursor hwc;
     S3GE ge;
 };
 
@@ -1444,19 +1453,32 @@ static bool s3_hwc_on(VGACommonState *vga)
     return (vga->cr[0x45] & 1) && s3_enhanced(vga);
 }
 
+static uint32_t s3_hwc_base(S3TrioState *s)
+{
+    uint8_t *cr = s->vga.cr;
+
+    return ((((cr[0x4c] & 0x0f) << 8) | cr[0x4d]) * KiB) & s3_vram_mask(s);
+}
+
 static void s3_cursor_invalidate(VGACommonState *vga)
 {
     S3TrioState *s = container_of(vga, S3TrioState, vga);
-    int y = ((vga->cr[0x48] & 7) << 8) | vga->cr[0x49];
-    int h = s3_hwc_on(vga) ? 64 - (vga->cr[0x4f] & 0x3f) : 0;
+    S3HWCursor c = {
+        .cr55 = vga->cr[0x55] & 0x10,
+        .fg = s->hwc_fg,
+        .bg = s->hwc_bg,
+        .y = ((vga->cr[0x48] & 7) << 8) | vga->cr[0x49],
+        .h = s3_hwc_on(vga) ? 64 - (vga->cr[0x4f] & 0x3f) : 0,
+    };
 
-    if (y == s->hwc_last_y && h == s->hwc_last_h) {
+    memcpy(c.cr, &vga->cr[0x45], sizeof(c.cr));
+    memcpy(c.image, vga->vram_ptr + s3_hwc_base(s), sizeof(c.image));
+    if (!memcmp(&c, &s->hwc, sizeof(c))) {
         return;
     }
-    vga_invalidate_scanlines(vga, s->hwc_last_y, s->hwc_last_y + s->hwc_last_h);
-    vga_invalidate_scanlines(vga, y, y + h);
-    s->hwc_last_y = y;
-    s->hwc_last_h = h;
+    vga_invalidate_scanlines(vga, s->hwc.y, s->hwc.y + s->hwc.h);
+    vga_invalidate_scanlines(vga, c.y, c.y + c.h);
+    s->hwc = c;
 }
 
 static void s3_cursor_draw_line(VGACommonState *vga, uint8_t *d, int scr_y)
@@ -1474,8 +1496,7 @@ static void s3_cursor_draw_line(VGACommonState *vga, uint8_t *d, int scr_y)
     if (!s3_hwc_on(vga) || scr_y < y0 || line >= 64) {
         return;
     }
-    base = ((((cr[0x4c] & 0x0f) << 8) | cr[0x4d]) * KiB + line * 16) &
-           s3_vram_mask(s);
+    base = s3_hwc_base(s) + line * 16;
     fg = s3_hwc_color(s, s->hwc_fg);
     bg = s3_hwc_color(s, s->hwc_bg);
     for (int i = xoff; i < 64; i++) {
