@@ -497,6 +497,7 @@ static void handle_textinput(SDL_Event *ev)
 
 static void handle_mousemotion(SDL_Event *ev)
 {
+    static int64_t rem_x, rem_y;
     int max_x, max_y;
     struct sdl2_console *scon = get_scon_from_window(ev->motion.windowID);
     int scr_w, scr_h, surf_w, surf_h, x, y, dx, dy;
@@ -524,8 +525,13 @@ static void handle_mousemotion(SDL_Event *ev)
     surf_h = surface_height(scon->surface);
     x = (int64_t)ev->motion.x * surf_w / scr_w;
     y = (int64_t)ev->motion.y * surf_h / scr_h;
-    dx = (int64_t)ev->motion.xrel * surf_w / scr_w;
-    dy = (int64_t)ev->motion.yrel * surf_h / scr_h;
+    /* carry the remainder, so that a scaled window keeps slow motion */
+    rem_x += (int64_t)ev->motion.xrel * surf_w;
+    rem_y += (int64_t)ev->motion.yrel * surf_h;
+    dx = rem_x / scr_w;
+    dy = rem_y / scr_h;
+    rem_x -= (int64_t)dx * scr_w;
+    rem_y -= (int64_t)dy * scr_h;
     if (gui_grab || qemu_input_is_absolute(scon->dcl.con) || absolute_enabled) {
         sdl_send_mouse_event(scon, dx, dy, x, y, ev->motion.state);
     }
