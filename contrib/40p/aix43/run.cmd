@@ -5,6 +5,7 @@ bin\windows-x86_64\qemu-system-ppc.exe ^
  -bios fw/P12H0456.IMG ^
  -drive file=nvram.bin,if=none,id=nvram,format=raw -global isa-m48t59.drive=nvram ^
  -vga none -device s3-trio64,romfile=fw/gxt110p.bin ^
+ -global ps2-mouse.wheel=off -global ps2-mouse.rate-limit=on ^
  -serial mon:stdio ^
  -net none -netdev user,id=n0,hostfwd=tcp:127.0.0.1:4323-:23 -device pcnet,netdev=n0 ^
  -drive file=aix433.qcow2,if=none,id=hd0,format=qcow2 ^
