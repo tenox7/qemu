@@ -86,6 +86,31 @@ static struct sdl2_console *get_scon_from_window(uint32_t window_id)
     return NULL;
 }
 
+/*
+ * Open the other graphic consoles, like a front panel, left of the first one:
+ * it grows to the right on a mode change, and SDL on macOS parks the host
+ * cursor in its middle
+ */
+static void sdl2_window_place(struct sdl2_console *scon)
+{
+    struct sdl2_console *head = &sdl2_console[0];
+    SDL_Rect usable;
+    int x, y, w, display;
+
+    if (scon == head || scon->hidden || !scon->real_window ||
+        !head->real_window || gui_fullscreen) {
+        return;
+    }
+    SDL_GetWindowPosition(head->real_window, &x, &y);
+    SDL_GetWindowSize(scon->real_window, &w, NULL);
+    x -= w;
+    display = SDL_GetWindowDisplayIndex(head->real_window);
+    if (!SDL_GetDisplayUsableBounds(display, &usable)) {
+        x = MAX(x, usable.x);
+    }
+    SDL_SetWindowPosition(scon->real_window, x, y);
+}
+
 void sdl2_window_create(struct sdl2_console *scon)
 {
     int flags = 0;
@@ -137,6 +162,7 @@ void sdl2_window_create(struct sdl2_console *scon)
         scon->real_renderer = SDL_CreateRenderer(scon->real_window, -1, 0);
     }
 
+    sdl2_window_place(scon);
     sdl_update_caption(scon);
 }
 
@@ -230,6 +256,11 @@ static void sdl_hide_cursor(struct sdl2_console *scon)
     SDL_SetCursor(sdl_cursor_hidden);
 
     if (!qemu_input_is_absolute(scon->dcl.con)) {
+        /*
+         * SDL on macOS parks the host cursor in the middle of the window,
+         * and clicks go to whatever window is on top there
+         */
+        SDL_RaiseWindow(scon->real_window);
         SDL_SetRelativeMouseMode(SDL_TRUE);
     }
 }
