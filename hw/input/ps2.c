@@ -24,7 +24,9 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
 #include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/input/ps2.h"
 #include "migration/vmstate.h"
@@ -816,19 +818,42 @@ static int ps2_mouse_send_packet(PS2MouseState *s)
     return 1;
 }
 
-/* send what a full queue held back, as the guest drains it */
+static bool ps2_mouse_moved(PS2MouseState *s)
+{
+    return s->mouse_dx || s->mouse_dy || s->mouse_dz || s->mouse_dw;
+}
+
+/*
+ * Send button changes at once. With rate-limit, send motion no faster than
+ * the guest's sample rate, like a real mouse. A full queue holds the rest
+ * until the guest drains it.
+ */
 static void ps2_mouse_flush(PS2MouseState *s)
 {
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    int rate = s->mouse_sample_rate ? s->mouse_sample_rate : 100;
+
     if ((s->mouse_status & (MOUSE_STATUS_ENABLED | MOUSE_STATUS_REMOTE)) !=
         MOUSE_STATUS_ENABLED) {
         return;
     }
-    while (s->mouse_dx || s->mouse_dy || s->mouse_dz || s->mouse_dw ||
-           s->mouse_buttons != s->mouse_sent_buttons) {
+    while (s->mouse_buttons != s->mouse_sent_buttons ||
+           (ps2_mouse_moved(s) && now >= s->mouse_next)) {
         if (!ps2_mouse_send_packet(s)) {
-            break;
+            return;
+        }
+        if (s->rate_limit) {
+            s->mouse_next = now + NANOSECONDS_PER_SECOND / rate;
         }
     }
+    if (ps2_mouse_moved(s)) {
+        timer_mod(s->mouse_timer, s->mouse_next);
+    }
+}
+
+static void ps2_mouse_timer(void *opaque)
+{
+    ps2_mouse_flush(opaque);
 }
 
 static void ps2_mouse_event(DeviceState *dev, QemuConsole *src,
@@ -894,18 +919,7 @@ static void ps2_mouse_sync(DeviceState *dev)
     if (s->mouse_buttons) {
         qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER, NULL);
     }
-    if (!(s->mouse_status & MOUSE_STATUS_REMOTE)) {
-        /*
-         * if not remote, send event. Multiple events are sent if
-         * too big deltas
-         */
-        while (ps2_mouse_send_packet(s)) {
-            if (s->mouse_dx == 0 && s->mouse_dy == 0
-                    && s->mouse_dz == 0 && s->mouse_dw == 0) {
-                break;
-            }
-        }
-    }
+    ps2_mouse_flush(s);
 }
 
 void ps2_mouse_fake_event(PS2MouseState *s)
@@ -1028,13 +1042,13 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             }
             break;
         case 2:
-            if (val == 80) {
+            if (val == 80 && s->wheel) {
                 s->mouse_type = 3; /* IMPS/2 */
             }
             s->mouse_detect_state = 0;
             break;
         case 3:
-            if (val == 80) {
+            if (val == 80 && s->wheel) {
                 s->mouse_type = 4; /* IMEX */
             }
             s->mouse_detect_state = 0;
@@ -1132,6 +1146,8 @@ static void ps2_mouse_reset_hold(Object *obj, ResetType type)
     s->mouse_dw = 0;
     s->mouse_buttons = 0;
     s->mouse_sent_buttons = 0;
+    s->mouse_next = 0;
+    timer_del(s->mouse_timer);
 }
 
 static const VMStateDescription vmstate_ps2_common = {
@@ -1250,6 +1266,7 @@ static int ps2_mouse_post_load(void *opaque, int version_id)
     PS2State *ps2 = PS2_DEVICE(s);
 
     ps2_common_post_load(ps2);
+    s->mouse_next = 0;
 
     return 0;
 }
@@ -1306,15 +1323,19 @@ static const QemuInputHandler ps2_mouse_handler = {
 static void ps2_mouse_realize(DeviceState *dev, Error **errp)
 {
     PS2State *s = PS2_DEVICE(dev);
+    PS2MouseState *m = PS2_MOUSE_DEVICE(dev);
 
     s->hs = qemu_input_handler_register(dev, &ps2_mouse_handler);
+    m->mouse_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ps2_mouse_timer, m);
 }
 
 static void ps2_mouse_unrealize(DeviceState *dev)
 {
     PS2State *s = PS2_DEVICE(dev);
+    PS2MouseState *m = PS2_MOUSE_DEVICE(dev);
 
     g_clear_pointer(&s->hs, qemu_input_handler_unregister);
+    g_clear_pointer(&m->mouse_timer, timer_free);
 }
 
 static void ps2_kbd_class_init(ObjectClass *klass, const void *data)
@@ -1337,12 +1358,18 @@ static const TypeInfo ps2_kbd_info = {
     .class_init    = ps2_kbd_class_init
 };
 
+static const Property ps2_mouse_properties[] = {
+    DEFINE_PROP_BOOL("rate-limit", PS2MouseState, rate_limit, false),
+    DEFINE_PROP_BOOL("wheel", PS2MouseState, wheel, true),
+};
+
 static void ps2_mouse_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
     PS2DeviceClass *ps2dc = PS2_DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, ps2_mouse_properties);
     dc->realize = ps2_mouse_realize;
     dc->unrealize = ps2_mouse_unrealize;
     resettable_class_set_parent_phases(rc, NULL, ps2_mouse_reset_hold, NULL,

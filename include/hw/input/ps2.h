@@ -95,6 +95,10 @@ struct PS2MouseState {
     int mouse_dw;
     uint8_t mouse_buttons;
     uint8_t mouse_sent_buttons; /* buttons in the last queued packet */
+    QEMUTimer *mouse_timer;
+    int64_t mouse_next; /* when the sample rate allows the next motion packet */
+    bool rate_limit;
+    bool wheel;
 };
 
 #define TYPE_PS2_MOUSE_DEVICE "ps2-mouse"
