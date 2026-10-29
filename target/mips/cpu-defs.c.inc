@@ -590,6 +590,29 @@ const mips_def_t mips_defs[] =
         .mmu_type = MMU_TYPE_R4000,
     },
     {
+        /*
+         * R4400MC CPU module: 16k/16k caches, 32-byte lines, secondary cache
+         * present (SC clear). SNI PROMs and HALs take that as an MP agent.
+         */
+        .name = "R4400",
+        .CP0_PRid = 0x00000440,
+        .CP0_Config0 = (1 << 22) | (2 << CP0C0_IC) | (2 << CP0C0_DC) |
+                       (1 << CP0C0_IB) | (1 << CP0C0_DB) | (2 << CP0C0_K0),
+        .CP0_Config1 = (1 << CP0C1_FP) | (47 << CP0C1_MMU),
+        .CP0_LLAddr_rw_bitmask = 0xFFFFFFFF,
+        .CP0_LLAddr_shift = 4,
+        .SYNCI_Step = 32,
+        .CCRes = 2,
+        .CP0_Status_rw_bitmask = 0x3678FFFF,
+        .CP1_fcr0 = (0x5 << FCR0_PRID) | (0x40 << FCR0_REV),
+        .CP1_fcr31 = 0,
+        .CP1_fcr31_rw_bitmask = 0x0183FFFF,
+        .SEGBITS = 40,
+        .PABITS = 36,
+        .insn_flags = CPU_MIPS3,
+        .mmu_type = MMU_TYPE_R4000,
+    },
+    {
         /* IDT R4600: as R4700, different PRId */
         .name = "R4600",
         .CP0_PRid = 0x00002020,
