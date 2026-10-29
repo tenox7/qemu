@@ -702,8 +702,12 @@ static vaddr mips_pointer_wrap(CPUState *cs, int mmu_idx,
 #endif
 
 static const TCGCPUOps mips_tcg_ops = {
-    .mttcg_supported = TARGET_LONG_BITS == 32,
-    .guest_default_memory_order = 0,
+    .mttcg_supported = true,
+    /*
+     * R4x00 multiprocessors only let a load pass an earlier store (TSO), and
+     * Windows NT relies on that: KeReleaseSpinLock is a plain store, no SYNC.
+     */
+    .guest_default_memory_order = TCG_MO_ALL & ~TCG_MO_ST_LD,
 
     .initialize = mips_tcg_init,
     .translate_code = mips_translate_code,
