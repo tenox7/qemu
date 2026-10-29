@@ -79,8 +79,14 @@ void cpu_mips_store_status(CPUMIPSState *env, target_ulong val)
 
     env->CP0_Status = (old & ~mask) | (val & mask);
 #if defined(TARGET_MIPS64)
-    if ((env->CP0_Status ^ old) & (old & (7 << CP0St_UX))) {
-        /* Access to at least one of the 64-bit segments has been disabled */
+    if ((env->CP0_Status ^ old) & (old & (7 << CP0St_UX)) &&
+        env->tlb_has_xaddr) {
+        /*
+         * Access to at least one of the 64-bit segments has been disabled.
+         * Skip the flush if no such address was mapped: 32-bit kernels like
+         * Windows NT toggle KX all the time.
+         */
+        env->tlb_has_xaddr = false;
         tlb_flush(env_cpu(env));
     }
 #endif
