@@ -8,6 +8,7 @@
 #include "qemu/units.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
+#include "qemu/main-loop.h"
 #include "qemu/bswap.h"
 #include "qemu/datadir.h"
 #include "qemu/timer.h"
@@ -39,6 +40,7 @@
 #include "system/reset.h"
 #include "system/runstate.h"
 #include "system/qtest.h"
+#include "system/tcg.h"
 #include "target/mips/cpu.h"
 #include "trace.h"
 
@@ -57,6 +59,9 @@
 #define CACHE_REPL_BASE 0x17c00000
 #define CACHE_REPL_SIZE 0x00400000
 #define INTACK_BASE     0x1a000000
+#define MPA_BASE        0x1ffff000
+#define MPA_SIZE        0x1000
+#define RM_MAX_CPUS     2
 
 /* ITPEND / IRQSEL / CSITPEND bits */
 #define IT_INT2  0x01
@@ -69,7 +74,7 @@
 #define IT_ETH   0x80
 #define IT_PCI   (IT_INTA | IT_INTB | IT_INTC | IT_INTD)
 
-#define SCSI_IRQ_DELAY_NS   (200 * SCALE_US)
+#define SCSI_IRQ_DELAY_US   200
 
 /* ASIC PCI registers, big-endian offsets */
 #define ASIC_UCONF          0x04
@@ -108,12 +113,51 @@ static const char *const xbus_names[16] = {
     "CLRPOFF", "CSTIMER", "PWDN",
 };
 
+/*
+ * MP agent on R4400 CPU modules, one per CPU, each CPU sees its own at
+ * MPA_BASE. 32-bit registers 8 bytes apart, little-endian offsets.
+ */
+#define MPA_CR          0x00    /* routing: bits 3-7 Int0-Int4, 9-12 messages */
+#define MPA_MSG_SEND    0x10    /* message << 24 | data << 4 | target mask */
+#define MPA_MSG_STATUS  0x18    /* bit 0 done, 1 no CPU, 2 retry, 7:4 CPUs */
+#define MPA_CONF        0x20    /* bits 27-28 CPU number */
+#define MPA_ITPEND      0x38    /* sources [10:0], routed to this CPU [22:12] */
+#define MPA_MSG_RECV    0x40    /* last message received */
+
+/* ITPEND sources: board Int0-Int4 (Int2 is the extra timer), messages */
+#define MPA_IT_LINES    0x01f
+#define MPA_IT_MSG      0x080
+#define MPA_IT_CLOCKMSG 0x100
+#define MPA_IT_INTERNAL 0x780
+#define MPA_MSG_CLOCK   0x0b
+#define MPA_QUEUE       8
+
+/* Messages queue up instead of bouncing: neither PROM nor HAL resend */
+typedef struct SniMpa {
+    CPUMIPSState *env;
+    uint32_t reg[MPA_SIZE / 8];
+    uint32_t msg;
+    uint32_t queue[MPA_QUEUE];
+    int queued;
+    uint16_t pend;
+} SniMpa;
+
 #define TYPE_SNI_RM200_MACHINE MACHINE_TYPE_NAME("sni-rm200")
+#define TYPE_SNI_RM300_MACHINE MACHINE_TYPE_NAME("sni-rm300")
 OBJECT_DECLARE_SIMPLE_TYPE(SniRm200MachineState, SNI_RM200_MACHINE)
 
 struct SniRm200MachineState {
     MachineState parent_obj;
     char *nvram_file;
+    uint8_t csmsr;
+    uint8_t csswitch;
+    int ncpus;
+    uint8_t mpa_lines;
+    QEMUTimer *boot_timer;
+    QEMUTimer *slice_timer;
+    uint32_t slice_us;
+    uint32_t scsi_delay_us;
+    SniMpa mpa[RM_MAX_CPUS];
 };
 
 #define TYPE_SNI_PCIMT "sni-pcimt-pcihost"
@@ -135,12 +179,20 @@ struct SniPcimtState {
     MemoryRegion mem_bg;
 
     qemu_irq cpu_irq[5];
+    qemu_irq xtimer_irq;
     QEMUTimer *scsi_timer;
+    QEMUTimer *xtimer;
+    int64_t xtimer_next;
+    int64_t xtimer_period;
+    uint16_t xtimer_count[3];
+    bool xtimer_msb[3];
     uint32_t asic[ASIC_REGS_SIZE / 4];
     uint8_t xbus[16];
     uint8_t pend;
     uint8_t csmsr;
     uint8_t csswitch;
+    bool has_xtimer;
+    uint32_t scsi_delay_us;
 };
 
 /*
@@ -171,15 +223,17 @@ static void pcimt_scsi_irq(void *opaque)
  * Real disks take milliseconds. SINIX enters init with a stale splhi(), so a
  * SCSI completion arriving within microseconds can slip between biowait()'s
  * B_DONE check and sleep(), losing the wakeup and hanging the boot.
+ * NT does not need this. Without -icount the delay costs at least 1 ms per
+ * I/O on hosts without ppoll() (macOS), hence scsi-delay=0 for NT there.
  */
 static void pcimt_set_pend(void *opaque, int bit, int level)
 {
     SniPcimtState *s = opaque;
 
-    if (1 << bit == IT_SCSI && level) {
+    if (1 << bit == IT_SCSI && level && s->scsi_delay_us) {
         if (!(s->pend & IT_SCSI) && !timer_pending(s->scsi_timer)) {
             timer_mod(s->scsi_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                      SCSI_IRQ_DELAY_NS);
+                      s->scsi_delay_us * SCALE_US);
         }
         return;
     }
@@ -251,6 +305,48 @@ static const MemoryRegionOps asic_ops = {
     .valid.max_access_size = 8,
 };
 
+/*
+ * Extra timer behind CSTIMER on multiprocessor boards: an 8254 clocked at
+ * 7.159 MHz, counter 0 output clocking counter 2. The NT HAL makes it the
+ * clock tick of the second CPU and acknowledges it by writing UNUSED2.
+ */
+#define XTIMER_HZ       7159090
+
+static void xtimer_tick(void *opaque)
+{
+    SniPcimtState *s = opaque;
+
+    qemu_irq_raise(s->xtimer_irq);
+    s->xtimer_next += s->xtimer_period;
+    timer_mod(s->xtimer, s->xtimer_next);
+}
+
+static void xtimer_write(SniPcimtState *s, hwaddr addr, uint8_t val)
+{
+    int n = (addr >> 2) & 3;
+
+    if (n == 3) {
+        n = val >> 6;
+        if (n < 3) {
+            s->xtimer_msb[n] = false;
+        }
+        return;
+    }
+    if (!s->xtimer_msb[n]) {
+        s->xtimer_count[n] = (s->xtimer_count[n] & 0xff00) | val;
+        s->xtimer_msb[n] = true;
+        return;
+    }
+    s->xtimer_count[n] = (s->xtimer_count[n] & 0x00ff) | (val << 8);
+    s->xtimer_msb[n] = false;
+    s->xtimer_period = muldiv64((s->xtimer_count[0] ?: 0x10000) *
+                                (s->xtimer_count[2] ?: 0x10000),
+                                NANOSECONDS_PER_SECOND, XTIMER_HZ);
+    trace_sni_xtimer(s->xtimer_period);
+    s->xtimer_next = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->xtimer_period;
+    timer_mod(s->xtimer, s->xtimer_next);
+}
+
 static uint8_t xbus_get(SniPcimtState *s, int reg)
 {
     switch (reg) {
@@ -283,6 +379,12 @@ static void xbus_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
     s->xbus[reg] = val;
     if (reg == XB_CSWCSM && (val & 0xff) == 0xfd) {
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+    }
+    if (s->has_xtimer && reg == XB_CSTIMER) {
+        xtimer_write(s, addr, val);
+    }
+    if (s->has_xtimer && reg == XB_UNUSED2) {
+        qemu_irq_lower(s->xtimer_irq);
     }
 }
 
@@ -386,6 +488,10 @@ static void pcimt_reset(DeviceState *dev)
     memset(s->xbus, 0, sizeof(s->xbus));
     s->pend &= IT_EISA | IT_SCSI | IT_ETH | IT_PCI;
     pcimt_update_irq(s);
+    timer_del(s->xtimer);
+    memset(s->xtimer_count, 0, sizeof(s->xtimer_count));
+    memset(s->xtimer_msb, 0, sizeof(s->xtimer_msb));
+    qemu_irq_lower(s->xtimer_irq);
 }
 
 static void pcimt_realize(DeviceState *dev, Error **errp)
@@ -431,8 +537,10 @@ static void pcimt_realize(DeviceState *dev, Error **errp)
     for (i = 0; i < ARRAY_SIZE(s->cpu_irq); i++) {
         sysbus_init_irq(sbd, &s->cpu_irq[i]);
     }
+    sysbus_init_irq(sbd, &s->xtimer_irq);
     qdev_init_gpio_in(dev, pcimt_set_pend, 8);
     s->scsi_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, pcimt_scsi_irq, s);
+    s->xtimer = timer_new_ns(QEMU_CLOCK_VIRTUAL, xtimer_tick, s);
 
     phb->bus = pci_register_root_bus(dev, "pci", pcimt_set_pend,
                                      pcimt_map_irq, s, &s->pci_mem,
@@ -442,6 +550,9 @@ static void pcimt_realize(DeviceState *dev, Error **errp)
 static const Property pcimt_props[] = {
     DEFINE_PROP_UINT8("csmsr", SniPcimtState, csmsr, 0x87),
     DEFINE_PROP_UINT8("csswitch", SniPcimtState, csswitch, 0x00),
+    DEFINE_PROP_BOOL("xtimer", SniPcimtState, has_xtimer, false),
+    DEFINE_PROP_UINT32("scsi-delay", SniPcimtState, scsi_delay_us,
+                       SCSI_IRQ_DELAY_US),
 };
 
 static void pcimt_class_init(ObjectClass *klass, const void *data)
@@ -563,6 +674,253 @@ static const MemoryRegionOps unassigned_ops = {
     .valid.min_access_size = 1,
     .valid.max_access_size = 8,
 };
+
+static uint32_t mpa_routed(SniMpa *m)
+{
+    uint32_t cr = qatomic_read(&m->reg[MPA_CR >> 3]);
+
+    return ((cr >> 3) & MPA_IT_LINES) | ((cr >> 2) & MPA_IT_INTERNAL);
+}
+
+/* Board lines reach every agent; each forwards what its CR routes there */
+static void mpa_update(SniRm200MachineState *s)
+{
+    int i, pin;
+
+    for (i = 0; i < s->ncpus; i++) {
+        SniMpa *m = &s->mpa[i];
+        uint32_t act = (s->mpa_lines | m->pend) & mpa_routed(m);
+
+        for (pin = 0; pin < 5; pin++) {
+            int level = !!(act & (1 << pin));
+
+            if (pin == 4) {
+                level |= !!(act & MPA_IT_INTERNAL);
+            }
+            qemu_set_irq(m->env->irq[2 + pin], level);
+        }
+    }
+}
+
+static void mpa_set_line(void *opaque, int n, int level)
+{
+    SniRm200MachineState *s = opaque;
+
+    if (level) {
+        qatomic_set(&s->mpa_lines, s->mpa_lines | 1 << n);
+    } else {
+        qatomic_set(&s->mpa_lines, s->mpa_lines & ~(1 << n));
+    }
+    mpa_update(s);
+}
+
+/* Single-threaded TCG runs all CPUs in turn on one host thread */
+static bool mpa_round_robin(void)
+{
+    return !tcg_enabled() || !qemu_tcg_mttcg_enabled();
+}
+
+static uint32_t mpa_send(SniRm200MachineState *s, int from, uint32_t val)
+{
+    uint32_t status = 1;
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        SniMpa *m;
+
+        if (!(val & (1 << i))) {
+            continue;
+        }
+        trace_sni_mpa_msg(from, i, val);
+        if (i >= s->ncpus) {
+            status |= 2;
+            continue;
+        }
+        m = &s->mpa[i];
+        if ((val >> 24) == MPA_MSG_CLOCK) {
+            qatomic_set(&m->pend, m->pend | MPA_IT_CLOCKMSG);
+            continue;
+        }
+        if (m->queued == MPA_QUEUE) {
+            qemu_log_mask(LOG_GUEST_ERROR, "mpagent: cpu%d queue full\n", i);
+            continue;
+        }
+        m->queue[m->queued++] = (val & ~0xfu) | (1 << from);
+        qatomic_set(&m->pend, m->pend | MPA_IT_MSG);
+        /* Let round-robin TCG run the target next, as if it ran in parallel */
+        if (i != from && current_cpu && mpa_round_robin()) {
+            cpu_exit(current_cpu);
+        }
+    }
+    return status;
+}
+
+static uint32_t mpa_receive(SniMpa *m)
+{
+    uint16_t pend = m->pend & ~MPA_IT_CLOCKMSG;
+
+    if (m->queued) {
+        m->msg = m->queue[0];
+        memmove(m->queue, m->queue + 1, --m->queued * sizeof(m->queue[0]));
+    }
+    if (!m->queued) {
+        pend &= ~MPA_IT_MSG;
+    }
+    qatomic_set(&m->pend, pend);
+    return m->msg;
+}
+
+static hwaddr mpa_reg(hwaddr addr)
+{
+    return target_big_endian() ? addr ^ 4 : addr;
+}
+
+static int mpa_cpu(uint64_t *pc)
+{
+    if (!current_cpu) {
+        *pc = 0;
+        return 0;
+    }
+    *pc = cpu_env(current_cpu)->active_tc.PC;
+    return current_cpu->cpu_index;
+}
+
+/*
+ * Reads run without the BQL. The NT HAL's idle loop polls ITPEND and CR
+ * a few hundred thousand times a second, and taking the BQL for every poll
+ * starves the I/O thread. Only MSG_RECV changes state.
+ */
+static uint64_t mpa_read(void *opaque, hwaddr addr, unsigned size)
+{
+    SniRm200MachineState *s = opaque;
+    uint64_t pc;
+    int cpu = mpa_cpu(&pc);
+    SniMpa *m = &s->mpa[cpu];
+    uint32_t val, src;
+
+    addr = mpa_reg(addr);
+    switch (addr) {
+    case MPA_CONF:
+        val = (qatomic_read(&m->reg[addr >> 3]) & ~(3u << 27)) | (cpu << 27);
+        break;
+    case MPA_MSG_STATUS:
+        /* PROM takes the CPU present mask from here after a self-ping */
+        val = qatomic_read(&m->reg[addr >> 3]) | (((1u << s->ncpus) - 1) << 4);
+        break;
+    case MPA_ITPEND:
+        src = qatomic_read(&s->mpa_lines) | qatomic_read(&m->pend);
+        val = src | ((src & mpa_routed(m)) << 12);
+        break;
+    case MPA_MSG_RECV: {
+        BQL_LOCK_GUARD();
+
+        val = mpa_receive(m);
+        mpa_update(s);
+        break;
+    }
+    default:
+        val = addr & 4 ? 0 : qatomic_read(&m->reg[addr >> 3]);
+    }
+    trace_sni_mpa_read(cpu, addr, val, pc);
+    return val;
+}
+
+static void mpa_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+{
+    SniRm200MachineState *s = opaque;
+    uint64_t pc;
+    int cpu = mpa_cpu(&pc);
+    SniMpa *m = &s->mpa[cpu];
+
+    BQL_LOCK_GUARD();
+    addr = mpa_reg(addr);
+    trace_sni_mpa_write(cpu, addr, val, pc);
+    if (addr & 4) {
+        return;
+    }
+    switch (addr) {
+    case MPA_MSG_SEND:
+        qatomic_set(&m->reg[MPA_MSG_STATUS >> 3], mpa_send(s, cpu, val));
+        break;
+    case MPA_MSG_STATUS:
+    case MPA_ITPEND:
+    case MPA_MSG_RECV:
+        break;
+    default:
+        qatomic_set(&m->reg[addr >> 3], val);
+    }
+    mpa_update(s);
+}
+
+static const MemoryRegionOps mpa_ops = {
+    .read = mpa_read,
+    .write = mpa_write,
+#if TARGET_BIG_ENDIAN
+    .endianness = DEVICE_BIG_ENDIAN,
+#else
+    .endianness = DEVICE_LITTLE_ENDIAN,
+#endif
+    .impl.min_access_size = 4,
+    .impl.max_access_size = 4,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 8,
+};
+
+static void mpa_reset(void *opaque)
+{
+    SniRm200MachineState *s = opaque;
+    int i;
+
+    for (i = 0; i < s->ncpus; i++) {
+        memset(s->mpa[i].reg, 0, sizeof(s->mpa[i].reg));
+        s->mpa[i].msg = 0;
+        s->mpa[i].queued = 0;
+        s->mpa[i].pend = 0;
+    }
+    mpa_update(s);
+
+    /*
+     * Every CPU clears the PROM's shared CPU table right after reset.
+     * Round-robin TCG would let CPU 0 fill the table before the others even
+     * start, so CPU 0 comes out of reset a little after them.
+     */
+    if (s->ncpus > 1) {
+        env_cpu(s->mpa[0].env)->halted = 1;
+        timer_mod(s->boot_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SCALE_MS);
+        if (s->slice_us && mpa_round_robin()) {
+            timer_mod(s->slice_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                      s->slice_us * SCALE_US);
+        }
+    }
+}
+
+/*
+ * Round-robin TCG runs each CPU for up to the next timer deadline (divided
+ * by the CPU count), often milliseconds. NT expects a thread readied for an
+ * idle CPU to start at once, win32k crashes during boot otherwise, so keep
+ * the slices short.
+ */
+static void mpa_slice_timer(void *opaque)
+{
+    SniRm200MachineState *s = opaque;
+
+    timer_mod(s->slice_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->slice_us * SCALE_US);
+    qemu_cpu_kick(env_cpu(s->mpa[0].env));
+}
+
+static void mpa_start_cpu(CPUState *cs, run_on_cpu_data data)
+{
+    cs->halted = 0;
+}
+
+static void mpa_boot_timer(void *opaque)
+{
+    SniRm200MachineState *s = opaque;
+
+    async_run_on_cpu(env_cpu(s->mpa[0].env), mpa_start_cpu, RUN_ON_CPU_NULL);
+}
 
 static void main_cpu_reset(void *opaque)
 {
@@ -766,33 +1124,48 @@ static void rm200_init_nvram(const char *path, MemoryRegion *mr)
 
 static void sni_rm200_init(MachineState *machine)
 {
+    SniRm200MachineState *rm = SNI_RM200_MACHINE(machine);
     MemoryRegion *sysmem = get_system_memory();
     MemoryRegion *prom = g_new(MemoryRegion, 1);
     MemoryRegion *nvram = g_new(MemoryRegion, 1);
     MemoryRegion *nvram_alias;
     MemoryRegion *cache_repl = g_new(MemoryRegion, 1);
     MemoryRegion *unassigned = g_new(MemoryRegion, 1);
+    MemoryRegion *mpa_mr;
     DeviceState *dev;
     SysBusDevice *sbd;
     SniPcimtState *pcimt;
     PCIBus *pci_bus;
     ISABus *isa_bus;
     ISADevice *pit, *isadev;
-    qemu_irq *i8259;
+    qemu_irq *i8259, *lines;
     DriveInfo *fds[MAX_FD];
     Clock *cpuclk;
     MIPSCPU *cpu;
     CPUMIPSState *env;
+    bool has_mpa;
     int i;
 
     cpuclk = clock_new(OBJECT(machine), "cpu-refclk");
     clock_set_hz(cpuclk, 133333333);
-    cpu = mips_cpu_create_with_clock(machine->cpu_type, cpuclk,
-                                     target_big_endian());
-    env = &cpu->env;
-    qemu_register_reset(main_cpu_reset, cpu);
-    cpu_mips_irq_init_cpu(cpu);
-    cpu_mips_clock_init(cpu);
+    rm->ncpus = machine->smp.cpus;
+    for (i = 0; i < rm->ncpus; i++) {
+        cpu = mips_cpu_create_with_clock(machine->cpu_type, cpuclk,
+                                         target_big_endian());
+        qemu_register_reset(main_cpu_reset, cpu);
+        cpu_mips_irq_init_cpu(cpu);
+        cpu_mips_clock_init(cpu);
+        rm->mpa[i].env = &cpu->env;
+    }
+    env = rm->mpa[0].env;
+
+    /* Config.SC clear: a CPU module with secondary cache and an MP agent */
+    has_mpa = !(env->CP0_Config0 & (1 << 17));
+    if (rm->ncpus > 1 && !has_mpa) {
+        error_report("more than one CPU needs CPU modules with an MP agent, "
+                     "use -cpu R4400");
+        exit(1);
+    }
 
     memory_region_init_io(unassigned, NULL, &unassigned_ops, NULL,
                           "unassigned", 1ull << 36);
@@ -820,6 +1193,10 @@ static void sni_rm200_init(MachineState *machine)
 
     /* ASIC PCI, board registers, PCI host */
     dev = qdev_new(TYPE_SNI_PCIMT);
+    qdev_prop_set_uint8(dev, "csmsr", rm->csmsr);
+    qdev_prop_set_uint8(dev, "csswitch", rm->csswitch);
+    qdev_prop_set_bit(dev, "xtimer", has_mpa);
+    qdev_prop_set_uint32(dev, "scsi-delay", rm->scsi_delay_us);
     sbd = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(sbd, &error_fatal);
     pcimt = SNI_PCIMT(dev);
@@ -829,8 +1206,28 @@ static void sni_rm200_init(MachineState *machine)
     sysbus_mmio_map(sbd, 3, ASIC_BASE);
     sysbus_mmio_map(sbd, 4, XBUS_BASE);
     sysbus_mmio_map_overlap(sbd, 5, INTACK_BASE, 1);
-    for (i = 0; i < 5; i++) {
-        sysbus_connect_irq(sbd, i, env->irq[2 + i]);
+    if (has_mpa) {
+        /* Board Int0-Int4 and the extra timer (on Int2) go through MP agents */
+        lines = qemu_allocate_irqs(mpa_set_line, rm, 5);
+        for (i = 0; i < 5; i++) {
+            if (i != 2) {
+                sysbus_connect_irq(sbd, i, lines[i]);
+            }
+        }
+        sysbus_connect_irq(sbd, 5, lines[2]);
+        mpa_mr = g_new(MemoryRegion, 1);
+        memory_region_init_io(mpa_mr, OBJECT(machine), &mpa_ops, rm,
+                              "rm200.mpagent", MPA_SIZE);
+        memory_region_enable_lockless_io(mpa_mr);
+        memory_region_add_subregion(sysmem, MPA_BASE, mpa_mr);
+        rm->boot_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, mpa_boot_timer, rm);
+        rm->slice_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, mpa_slice_timer,
+                                       rm);
+        qemu_register_reset(mpa_reset, rm);
+    } else {
+        for (i = 0; i < 5; i++) {
+            sysbus_connect_irq(sbd, i, env->irq[2 + i]);
+        }
     }
     pci_bus = PCI_HOST_BRIDGE(dev)->bus;
 
@@ -917,11 +1314,62 @@ static void sni_rm200_class_init(ObjectClass *oc, const void *data)
                                           "File backing the 32KB NVRAM");
 }
 
+static void sni_rm200_instance_init(Object *obj)
+{
+    SniRm200MachineState *s = SNI_RM200_MACHINE(obj);
+
+    s->csmsr = 0x87;
+    s->scsi_delay_us = SCSI_IRQ_DELAY_US;
+    object_property_add_uint32_ptr(obj, "scsi-delay", &s->scsi_delay_us,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_set_description(obj, "scsi-delay",
+                                    "Delay of SCSI completion interrupts, "
+                                    "in microseconds (0 = none)");
+}
+
 static const TypeInfo sni_rm200_type = {
     .name = TYPE_SNI_RM200_MACHINE,
     .parent = TYPE_MACHINE,
     .instance_size = sizeof(SniRm200MachineState),
+    .instance_init = sni_rm200_instance_init,
     .class_init = sni_rm200_class_init,
+};
+
+/*
+ * PCI minitower: same ASIC, CSMSR bit 7 clear, up to two R4400 modules.
+ * Its PROM reads "temperature normal" as CSSWITCH bit 5 set.
+ */
+static void sni_rm300_instance_init(Object *obj)
+{
+    SniRm200MachineState *s = SNI_RM200_MACHINE(obj);
+
+    s->csmsr = 0x0f;
+    s->csswitch = 0x20;
+    s->slice_us = 100;
+    object_property_add_uint32_ptr(obj, "slice", &s->slice_us,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_set_description(obj, "slice",
+                                    "Longest CPU time slice with -smp > 1 "
+                                    "and single-threaded TCG, in "
+                                    "microseconds (0 = QEMU default)");
+}
+
+static void sni_rm300_class_init(ObjectClass *oc, const void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    /* Every machine class starts with empty compat_props */
+    compat_props_add(mc->compat_props, rm200_props, ARRAY_SIZE(rm200_props));
+    mc->desc = "Siemens Nixdorf RM300-C (PCI, up to 2 CPUs)";
+    mc->default_cpu_type = MIPS_CPU_TYPE_NAME("R4400");
+    mc->max_cpus = RM_MAX_CPUS;
+}
+
+static const TypeInfo sni_rm300_type = {
+    .name = TYPE_SNI_RM300_MACHINE,
+    .parent = TYPE_SNI_RM200_MACHINE,
+    .instance_init = sni_rm300_instance_init,
+    .class_init = sni_rm300_class_init,
 };
 
 static void sni_rm200_register_types(void)
@@ -929,6 +1377,7 @@ static void sni_rm200_register_types(void)
     type_register_static(&pcimt_info);
     type_register_static(&pceb_info);
     type_register_static(&sni_rm200_type);
+    type_register_static(&sni_rm300_type);
 }
 
 type_init(sni_rm200_register_types)

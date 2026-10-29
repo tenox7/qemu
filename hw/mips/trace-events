@@ -11,3 +11,7 @@ sni_pcicfg_read(uint32_t addr, unsigned size, uint32_t val) "0x%06x/%u -> 0x%x"
 sni_pcicfg_write(uint32_t addr, unsigned size, uint32_t val) "0x%06x/%u <- 0x%x"
 sni_idx_read(const char *name, uint8_t idx, uint8_t val) "%s [0x%02x] -> 0x%02x"
 sni_idx_write(const char *name, uint8_t idx, uint8_t val) "%s [0x%02x] <- 0x%02x"
+sni_mpa_read(int cpu, uint64_t addr, uint32_t val, uint64_t pc) "cpu%d [0x%03" PRIx64 "] -> 0x%08x pc 0x%" PRIx64
+sni_mpa_write(int cpu, uint64_t addr, uint32_t val, uint64_t pc) "cpu%d [0x%03" PRIx64 "] <- 0x%08x pc 0x%" PRIx64
+sni_mpa_msg(int from, int to, uint32_t val) "cpu%d -> cpu%d 0x%08x"
+sni_xtimer(uint64_t period) "period %" PRIu64 " ns"
