@@ -932,6 +932,11 @@ bool mips_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
         break;
     }
     if (ret == TLBRET_MATCH) {
+#if defined(TARGET_MIPS64)
+        if (address != (int32_t)address) {
+            env->tlb_has_xaddr = true;
+        }
+#endif
         tlb_set_page(cs, address & TARGET_PAGE_MASK,
                      physical & TARGET_PAGE_MASK, prot,
                      mmu_idx, TARGET_PAGE_SIZE);
