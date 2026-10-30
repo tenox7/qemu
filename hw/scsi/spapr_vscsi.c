@@ -86,7 +86,7 @@ typedef struct vscsi_req {
     uint16_t                total_desc;
     uint16_t                cdb_offset;
     uint16_t                cur_desc_num;
-    uint16_t                cur_desc_offset;
+    uint32_t                cur_desc_offset;
 } vscsi_req;
 
 #define TYPE_VIO_SPAPR_VSCSI_DEVICE "spapr-vscsi"
@@ -620,7 +620,7 @@ static const VMStateDescription vmstate_spapr_vscsi_req = {
         VMSTATE_UINT16(cdb_offset, vscsi_req),
       /*Restart SCSI request from the beginning for now */
       /*VMSTATE_UINT16(cur_desc_num, vscsi_req),
-        VMSTATE_UINT16(cur_desc_offset, vscsi_req),*/
+        VMSTATE_UINT32(cur_desc_offset, vscsi_req),*/
         VMSTATE_END_OF_LIST()
     },
 };
