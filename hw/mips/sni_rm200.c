@@ -61,7 +61,7 @@
 #define INTACK_BASE     0x1a000000
 #define MPA_BASE        0x1ffff000
 #define MPA_SIZE        0x1000
-#define RM_MAX_CPUS     2
+#define RM_MAX_CPUS     4       /* real R4400 boards: 2 */
 
 /* ITPEND / IRQSEL / CSITPEND bits */
 #define IT_INT2  0x01
@@ -1337,6 +1337,7 @@ static const TypeInfo sni_rm200_type = {
 
 /*
  * PCI minitower: same ASIC, CSMSR bit 7 clear, up to two R4400 modules.
+ * The MP agents, PROM and NT HAL also run four (NT 4.0 Server uses them).
  * Its PROM reads "temperature normal" as CSSWITCH bit 5 set.
  */
 static void sni_rm300_instance_init(Object *obj)
@@ -1360,7 +1361,7 @@ static void sni_rm300_class_init(ObjectClass *oc, const void *data)
 
     /* Every machine class starts with empty compat_props */
     compat_props_add(mc->compat_props, rm200_props, ARRAY_SIZE(rm200_props));
-    mc->desc = "Siemens Nixdorf RM300-C (PCI, up to 2 CPUs)";
+    mc->desc = "Siemens Nixdorf RM300-C (PCI, up to 4 CPUs)";
     mc->default_cpu_type = MIPS_CPU_TYPE_NAME("R4400");
     mc->max_cpus = RM_MAX_CPUS;
 }
