@@ -294,6 +294,52 @@ static target_ulong h_read(PowerPCCPU *cpu, SpaprMachineState *spapr,
     return H_SUCCESS;
 }
 
+static target_ulong clear_hpte_bit(PowerPCCPU *cpu, target_ulong ptex,
+                                   uint64_t bit, target_ulong *args)
+{
+    CPUPPCState *env = &cpu->env;
+    const ppc_hash_pte64_t *hptes;
+    target_ulong v, r;
+
+    if (!ppc_hash64_valid_ptex(cpu, ptex)) {
+        return H_PARAMETER;
+    }
+
+    hptes = ppc_hash64_map_hptes(cpu, ptex, 1);
+    v = ppc_hash64_hpte0(cpu, hptes, 0);
+    r = ppc_hash64_hpte1(cpu, hptes, 0);
+    ppc_hash64_unmap_hptes(cpu, hptes, ptex, 1);
+
+    if ((v & HPTE64_V_VALID) == 0) {
+        return H_NOT_FOUND;
+    }
+
+    /* Return the old second doubleword, with the old R and C bits */
+    args[0] = r;
+    if (r & bit) {
+        spapr_store_hpte(cpu, ptex, v | HPTE64_V_HPTE_DIRTY, r & ~bit);
+        /*
+         * Drop cached translations, so the next access (or the next
+         * store, for C) goes through ppc_hash64_xlate() and sets the bit
+         */
+        ppc_hash64_tlb_flush_hpte(cpu, ptex, v, r);
+        check_tlb_flush(env, true);
+    }
+    return H_SUCCESS;
+}
+
+static target_ulong h_clear_mod(PowerPCCPU *cpu, SpaprMachineState *spapr,
+                                target_ulong opcode, target_ulong *args)
+{
+    return clear_hpte_bit(cpu, args[1], HPTE64_R_C, args);
+}
+
+static target_ulong h_clear_ref(PowerPCCPU *cpu, SpaprMachineState *spapr,
+                                target_ulong opcode, target_ulong *args)
+{
+    return clear_hpte_bit(cpu, args[1], HPTE64_R_R, args);
+}
+
 struct SpaprPendingHpt {
     /* These fields are read-only after initialization */
     int shift;
@@ -602,6 +648,8 @@ static void hypercall_register_types(void)
     spapr_register_hypercall(H_REMOVE, h_remove);
     spapr_register_hypercall(H_PROTECT, h_protect);
     spapr_register_hypercall(H_READ, h_read);
+    spapr_register_hypercall(H_CLEAR_MOD, h_clear_mod);
+    spapr_register_hypercall(H_CLEAR_REF, h_clear_ref);
 
     /* hcall-bulk */
     spapr_register_hypercall(H_BULK_REMOVE, h_bulk_remove);
