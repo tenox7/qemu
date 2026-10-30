@@ -34,6 +34,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/module.h"
+#include "qemu/cutils.h"
 #include "hw/scsi/scsi.h"
 #include "migration/vmstate.h"
 #include "scsi/constants.h"
@@ -519,6 +520,30 @@ static int vscsi_preprocess_desc(vscsi_req *req)
     return 0;
 }
 
+/*
+ * A VIOS puts an ID of the backing device in the vendor specific part of
+ * the standard INQUIRY data (bytes 96-254). AIX builds the disk's unique_id
+ * from it, and when it comes out empty, drops the path to the disk at the
+ * next boot (the boot then stops at LED 554). Fill it in for disks that
+ * leave it empty, from the stable device_id (serial or drive name).
+ */
+static void vscsi_inquiry_add_id(SCSIRequest *sreq, uint8_t *buf,
+                                 uint32_t len)
+{
+    char *id;
+
+    if (sreq->cmd.buf[0] != INQUIRY || (sreq->cmd.buf[1] & 0x01) ||
+        sreq->dev->type != TYPE_DISK || len <= 96 ||
+        !buffer_is_zero(buf + 96, len - 96)) {
+        return;
+    }
+    id = object_property_get_str(OBJECT(sreq->dev), "device_id", NULL);
+    if (id && *id) {
+        snprintf((char *)buf + 96, len - 96, "QEMU-%s", id);
+    }
+    g_free(id);
+}
+
 /* Callback to indicate that the SCSI layer has completed a transfer.  */
 static void vscsi_transfer_data(SCSIRequest *sreq, uint32_t len)
 {
@@ -535,6 +560,9 @@ static void vscsi_transfer_data(SCSIRequest *sreq, uint32_t len)
 
     if (len) {
         buf = scsi_req_get_buf(sreq);
+        if (!req->writing) {
+            vscsi_inquiry_add_id(sreq, buf, len);
+        }
         rc = vscsi_srp_transfer_data(s, req, req->writing, buf, len);
     }
     if (rc < 0) {
