@@ -1,7 +1,8 @@
-# NT 4.0 MIPS on the RM300-C: two CPUs
+# NT 4.0 MIPS on the RM300-C: two or four CPUs
 
 **TL;DR** `-M sni-rm300 -smp 2 -accel tcg,thread=multi` runs Windows NT 4.0 on two
 R4400 CPUs, each on its own host core. NT needs a patched PROM and the MP kernel.
+NT 4.0 Server also runs on four CPUs (`-smp 4`).
 
 ## Run
 
@@ -58,6 +59,18 @@ cp NTKRNLMP.EXE /mnt/WINNT/system32/ntoskrnl.exe
 umount /mnt; losetup -d $L
 ```
 
+## Four CPUs
+
+`-smp 4` needs NT 4.0 Server. Workstation boots on four CPUs but uses only two (its
+licence limit). Real R4400 boards had at most two CPUs, but the MP agents, the PROM and
+the NT HAL handle four: POST lists Processor 0 to 3 and NT shows
+"4 System Processors [64 MB Memory] MultiProcessor Kernel". The patched PROM above
+needs no more changes.
+
+A fresh Server install needs no kernel swap: setup finds "Siemens Nixdorf
+RM300-C/RM400-C Multiprocessor" and installs the MP kernel by itself. Put the CD at
+SCSI ID 5 (`-device scsi-cd,drive=cd0,scsi-id=5`) for the firmware's install menu.
+
 ## Speed
 
 Apple Silicon Mac. Test: a cmd loop of 1,000,000 `set` commands.
@@ -67,8 +80,17 @@ Apple Silicon Mac. Test: a cmd loop of 1,000,000 `set` commands.
 | sni-rm200, 1 CPU, `-icount shift=3`     | 27 s            | 152 s  | -               |
 | sni-rm300, 2 CPUs, multi-threaded TCG   | 20-27 s         | 16 s   | 16 s each       |
 
+NT 4.0 Server, loop run from a batch file:
+
+| Setup                                   | 1 loop | 4 loops at once |
+|-----------------------------------------|--------|-----------------|
+| sni-rm300, 2 CPUs, multi-threaded TCG   | 12 s   | -               |
+| sni-rm300, 4 CPUs, multi-threaded TCG   | 16 s   | 15 s each       |
+
 Without `-icount` the CPUs run as fast as the host allows. The NT clock still follows
-real time. NT's idle loop spins, so an idle VM keeps two host cores busy.
+real time. NT's idle loop spins, so an idle VM keeps two host cores busy, or about
+three with four CPUs. Typed at the cmd prompt instead of a batch file, the same loop
+is many times slower.
 
 ## Options
 
