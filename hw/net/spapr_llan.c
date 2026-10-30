@@ -475,7 +475,12 @@ static target_ulong h_register_logical_lan(PowerPCCPU *cpu,
     }
 
     dev->buf_list = buf_list;
-    sdev->signal_state = 0;
+    /*
+     * Registering leaves the interrupt enabled. The AIX driver never
+     * enables it with H_VIO_SIGNAL, so it would never see a frame.
+     * Linux and FreeBSD enable it themselves.
+     */
+    sdev->signal_state = 1;
 
     rec_queue &= ~VLAN_BD_TOGGLE;
 
