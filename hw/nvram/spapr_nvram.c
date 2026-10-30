@@ -188,9 +188,13 @@ static void spapr_nvram_realize(SpaprVioDevice *dev, Error **errp)
             return;
         }
     } else if (nb_prom_envs > 0) {
-        /* Create a system partition to pass the -prom-env variables */
+        /*
+         * Create a system partition to pass the -prom-env variables.
+         * Name it "common", as SLOF does: AIX bootlist looks it up by
+         * that name, SLOF by its type.
+         */
         chrp_nvram_create_system_partition(nvram->buf, MIN_NVRAM_SIZE / 4,
-                                           nvram->size);
+                                           nvram->size, "common");
         chrp_nvram_create_free_partition(&nvram->buf[MIN_NVRAM_SIZE / 4],
                                          nvram->size - MIN_NVRAM_SIZE / 4);
     }
