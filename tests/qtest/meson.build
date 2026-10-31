@@ -58,6 +58,7 @@ qtests_filter = \
 
 qtests_i386 = \
   (slirp.found() ? ['pxe-test'] : []) + \
+  (pixman.found() ? ['mcp-test'] : []) + \
   qtests_filter + \
   (config_all_devices.has_key('CONFIG_ACPI_VMGENID') ? ['vmgenid-test'] : []) +             \
   (config_all_devices.has_key('CONFIG_AHCI_ICH9') and have_tools ? ['ahci-test'] : []) +    \
