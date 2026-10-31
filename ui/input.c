@@ -19,22 +19,82 @@ struct QemuInputHandlerState {
     QTAILQ_ENTRY(QemuInputHandlerState) node;
 };
 
-typedef struct QemuInputEventQueue QemuInputEventQueue;
-typedef QTAILQ_HEAD(QemuInputEventQueueHead, QemuInputEventQueue)
-    QemuInputEventQueueHead;
+/*
+ * The input scheduler.
+ *
+ * Events wait in lanes, one per target console (NULL is the default
+ * lane).  A lane delivers its items in order; DELAY items pause it on
+ * QEMU_CLOCK_VIRTUAL, so pacing follows the guest's own time and stops
+ * while the VM is paused.  Items belong to a batch; the END item of a
+ * batch calls its completion callback.  There is no fixed cap: only
+ * absurd batch sizes are refused.
+ *
+ * Every key and button that a batch presses is remembered until it is
+ * released, so a cancelled batch or a departing owner (for example an
+ * MCP client that disconnects) never leaves a key or button down.
+ */
+typedef enum {
+    QEMU_INPUT_ITEM_DELAY = 1,
+    QEMU_INPUT_ITEM_EVENT,
+    QEMU_INPUT_ITEM_SYNC,
+    QEMU_INPUT_ITEM_END,
+} QemuInputItemType;
 
-struct QemuInputEventQueue {
-    enum {
-        QEMU_INPUT_QUEUE_DELAY = 1,
-        QEMU_INPUT_QUEUE_EVENT,
-        QEMU_INPUT_QUEUE_SYNC,
-    } type;
-    QEMUTimer *timer;
+typedef struct QemuInputItem {
+    QemuInputItemType type;
+    uint64_t batch;             /* 0 for the legacy send-key interface */
     uint32_t delay_ms;
     QemuConsole *src;
     QemuInputEvent evt;
-    QTAILQ_ENTRY(QemuInputEventQueue) node;
+    QSIMPLEQ_ENTRY(QemuInputItem) node;
+} QemuInputItem;
+
+typedef QSIMPLEQ_HEAD(, QemuInputItem) QemuInputItemList;
+
+struct QemuInputBatch {
+    QemuConsole *con;
+    QemuInputItemList items;
+    size_t count;
 };
+
+typedef struct QemuInputPending {
+    uint64_t id;
+    void *owner;
+    QemuInputBatchDone *done;
+    void *opaque;
+    QTAILQ_ENTRY(QemuInputPending) node;
+} QemuInputPending;
+
+typedef struct QemuInputLane {
+    QemuConsole *con;
+    QemuInputItemList items;
+    QEMUTimer *timer;
+    bool waiting;               /* the head DELAY item is running */
+    QTAILQ_ENTRY(QemuInputLane) node;
+} QemuInputLane;
+
+/* A key or button that the scheduler pressed and has not released */
+typedef struct QemuInputHeld {
+    uint64_t batch;
+    void *owner;
+    QemuConsole *src;
+    bool is_button;
+    unsigned int code;          /* Linux key code or InputButton */
+    QTAILQ_ENTRY(QemuInputHeld) node;
+} QemuInputHeld;
+
+#define QEMU_INPUT_BATCH_MAX (1024 * 1024)
+
+static QTAILQ_HEAD(, QemuInputLane) input_lanes =
+    QTAILQ_HEAD_INITIALIZER(input_lanes);
+static QTAILQ_HEAD(, QemuInputPending) input_pending =
+    QTAILQ_HEAD_INITIALIZER(input_pending);
+static QTAILQ_HEAD(, QemuInputHeld) input_held =
+    QTAILQ_HEAD_INITIALIZER(input_held);
+static uint64_t input_next_batch = 1;
+static uint32_t kbd_default_delay_ms = 10;
+static int input_scheduler_delivering;
+static uint64_t input_foreign_mouse;
 
 static QTAILQ_HEAD(, QemuInputHandlerState) handlers =
     QTAILQ_HEAD_INITIALIZER(handlers);
@@ -43,11 +103,6 @@ static NotifierList mouse_mode_notifiers =
 static NotifierList leds_notifiers =
     NOTIFIER_LIST_INITIALIZER(leds_notifiers);
 
-static QemuInputEventQueueHead kbd_queue = QTAILQ_HEAD_INITIALIZER(kbd_queue);
-static QEMUTimer *kbd_timer;
-static uint32_t kbd_default_delay_ms = 10;
-static uint32_t queue_count;
-static uint32_t queue_limit = 1024;
 
 static void notify_input_changed(uint32_t mask)
 {
@@ -271,75 +326,518 @@ static void qemu_input_event_trace(QemuConsole *src, QemuInputEvent *evt)
     }
 }
 
-static void qemu_input_queue_process(void *opaque)
+static void qemu_input_lane_run(QemuInputLane *lane);
+
+static void qemu_input_lane_timer(void *opaque)
 {
-    QemuInputEventQueueHead *queue = opaque;
-    QemuInputEventQueue *item;
+    QemuInputLane *lane = opaque;
+    QemuInputItem *item = QSIMPLEQ_FIRST(&lane->items);
 
-    g_assert(!QTAILQ_EMPTY(queue));
-    item = QTAILQ_FIRST(queue);
-    g_assert(item->type == QEMU_INPUT_QUEUE_DELAY);
-    QTAILQ_REMOVE(queue, item, node);
-    queue_count--;
+    g_assert(lane->waiting && item && item->type == QEMU_INPUT_ITEM_DELAY);
+    lane->waiting = false;
+    QSIMPLEQ_REMOVE_HEAD(&lane->items, node);
     g_free(item);
+    qemu_input_lane_run(lane);
+}
 
-    while (!QTAILQ_EMPTY(queue)) {
-        item = QTAILQ_FIRST(queue);
+static void qemu_input_vm_state(void *opaque, bool running, RunState state)
+{
+    QemuInputLane *lane;
+
+    if (!running) {
+        return;
+    }
+    QTAILQ_FOREACH(lane, &input_lanes, node) {
+        qemu_input_lane_run(lane);
+    }
+}
+
+static QemuInputLane *qemu_input_lane_get(QemuConsole *con)
+{
+    static VMChangeStateEntry *vm_state;
+    QemuInputLane *lane;
+
+    if (!vm_state) {
+        vm_state = qemu_add_vm_change_state_handler(qemu_input_vm_state,
+                                                    NULL);
+    }
+
+    QTAILQ_FOREACH(lane, &input_lanes, node) {
+        if (lane->con == con) {
+            return lane;
+        }
+    }
+    lane = g_new0(QemuInputLane, 1);
+    lane->con = con;
+    QSIMPLEQ_INIT(&lane->items);
+    lane->timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL, SCALE_MS,
+                                 QEMU_TIMER_ATTR_EXTERNAL,
+                                 qemu_input_lane_timer, lane);
+    QTAILQ_INSERT_TAIL(&input_lanes, lane, node);
+    return lane;
+}
+
+static QemuInputPending *qemu_input_pending_find(uint64_t id)
+{
+    QemuInputPending *p;
+
+    QTAILQ_FOREACH(p, &input_pending, node) {
+        if (p->id == id) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static void qemu_input_held_track(uint64_t batch, QemuConsole *src,
+                                  QemuInputEvent *evt)
+{
+    QemuInputPending *p = qemu_input_pending_find(batch);
+    QemuInputHeld *h, *next;
+    bool is_button;
+    unsigned int code;
+    bool down;
+
+    if (evt->type == INPUT_EVENT_KIND_KEY) {
+        is_button = false;
+        code = evt->key.key;
+        down = evt->key.down;
+    } else if (evt->type == INPUT_EVENT_KIND_BTN) {
+        is_button = true;
+        code = evt->btn.button;
+        down = evt->btn.down;
+    } else {
+        return;
+    }
+
+    QTAILQ_FOREACH_SAFE(h, &input_held, node, next) {
+        if (h->src == src && h->is_button == is_button && h->code == code) {
+            QTAILQ_REMOVE(&input_held, h, node);
+            g_free(h);
+        }
+    }
+    if (down) {
+        h = g_new0(QemuInputHeld, 1);
+        h->batch = batch;
+        h->owner = p ? p->owner : NULL;
+        h->src = src;
+        h->is_button = is_button;
+        h->code = code;
+        QTAILQ_INSERT_TAIL(&input_held, h, node);
+    }
+}
+
+static void qemu_input_deliver(uint64_t batch, QemuConsole *src,
+                               QemuInputEvent *evt)
+{
+    if (batch) {
+        qemu_input_held_track(batch, src, evt);
+    }
+    input_scheduler_delivering++;
+    qemu_input_event_send(src, evt);
+    input_scheduler_delivering--;
+}
+
+static void qemu_input_batch_finish(uint64_t id, bool cancelled)
+{
+    QemuInputPending *p = qemu_input_pending_find(id);
+
+    if (p) {
+        QTAILQ_REMOVE(&input_pending, p, node);
+        if (p->done) {
+            p->done(p->opaque, cancelled);
+        }
+        g_free(p);
+    }
+}
+
+static bool qemu_input_vm_takes_input(void)
+{
+    return runstate_is_running() || runstate_check(RUN_STATE_SUSPENDED);
+}
+
+static void qemu_input_lane_run(QemuInputLane *lane)
+{
+    QemuInputItem *item;
+
+    while (!lane->waiting && (item = QSIMPLEQ_FIRST(&lane->items))) {
+        /*
+         * Hold input while the VM is paused; the guest would drop it.
+         * The lanes start again when it resumes.
+         */
+        if (item->type != QEMU_INPUT_ITEM_DELAY &&
+            item->type != QEMU_INPUT_ITEM_END &&
+            !qemu_input_vm_takes_input()) {
+            return;
+        }
         switch (item->type) {
-        case QEMU_INPUT_QUEUE_DELAY:
-            timer_mod(item->timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)
+        case QEMU_INPUT_ITEM_DELAY:
+            lane->waiting = true;
+            timer_mod(lane->timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)
                       + item->delay_ms);
             return;
-        case QEMU_INPUT_QUEUE_EVENT:
-            qemu_input_event_send(item->src, &item->evt);
+        case QEMU_INPUT_ITEM_EVENT:
+            qemu_input_deliver(item->batch, item->src, &item->evt);
             break;
-        case QEMU_INPUT_QUEUE_SYNC:
+        case QEMU_INPUT_ITEM_SYNC:
+            input_scheduler_delivering++;
             qemu_input_event_sync();
+            input_scheduler_delivering--;
+            break;
+        case QEMU_INPUT_ITEM_END:
             break;
         }
-        QTAILQ_REMOVE(queue, item, node);
-        queue_count--;
+        QSIMPLEQ_REMOVE_HEAD(&lane->items, node);
+        if (item->type == QEMU_INPUT_ITEM_END) {
+            uint64_t id = item->batch;
+
+            g_free(item);
+            /* the callback may queue more input; it starts the lane again */
+            qemu_input_batch_finish(id, false);
+            continue;
+        }
         g_free(item);
     }
 }
 
-static void qemu_input_queue_delay(QemuInputEventQueueHead *queue,
-                                   QEMUTimer *timer, uint32_t delay_ms)
+static QemuInputItem *qemu_input_item_new(QemuInputItemType type)
 {
-    QemuInputEventQueue *item = g_new0(QemuInputEventQueue, 1);
-    bool start_timer = QTAILQ_EMPTY(queue);
+    QemuInputItem *item = g_new0(QemuInputItem, 1);
 
-    item->type = QEMU_INPUT_QUEUE_DELAY;
+    item->type = type;
+    return item;
+}
+
+static void qemu_input_legacy_append(QemuInputItem *item)
+{
+    QemuInputLane *lane = qemu_input_lane_get(NULL);
+
+    QSIMPLEQ_INSERT_TAIL(&lane->items, item, node);
+    qemu_input_lane_run(lane);
+}
+
+QemuInputBatch *qemu_input_batch_new(QemuConsole *con)
+{
+    QemuInputBatch *b = g_new0(QemuInputBatch, 1);
+
+    b->con = con;
+    QSIMPLEQ_INIT(&b->items);
+    return b;
+}
+
+void qemu_input_batch_free(QemuInputBatch *b)
+{
+    QemuInputItem *item;
+
+    if (!b) {
+        return;
+    }
+    while ((item = QSIMPLEQ_FIRST(&b->items))) {
+        QSIMPLEQ_REMOVE_HEAD(&b->items, node);
+        g_free(item);
+    }
+    g_free(b);
+}
+
+static void qemu_input_batch_append(QemuInputBatch *b, QemuInputItem *item)
+{
+    QSIMPLEQ_INSERT_TAIL(&b->items, item, node);
+    b->count++;
+}
+
+void qemu_input_batch_event(QemuInputBatch *b, QemuInputEvent *evt)
+{
+    QemuInputItem *item = qemu_input_item_new(QEMU_INPUT_ITEM_EVENT);
+
+    item->src = b->con;
+    item->evt = *evt;
+    qemu_input_batch_append(b, item);
+}
+
+void qemu_input_batch_sync(QemuInputBatch *b)
+{
+    qemu_input_batch_append(b, qemu_input_item_new(QEMU_INPUT_ITEM_SYNC));
+}
+
+void qemu_input_batch_delay(QemuInputBatch *b, uint32_t delay_ms)
+{
+    QemuInputItem *item;
+
+    if (!delay_ms) {
+        return;
+    }
+    item = qemu_input_item_new(QEMU_INPUT_ITEM_DELAY);
     item->delay_ms = delay_ms;
-    item->timer = timer;
-    QTAILQ_INSERT_TAIL(queue, item, node);
-    queue_count++;
+    qemu_input_batch_append(b, item);
+}
 
-    if (start_timer) {
-        timer_mod(item->timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)
-                  + item->delay_ms);
+void qemu_input_batch_key(QemuInputBatch *b, unsigned int lnx, bool down)
+{
+    QemuInputEvent evt = {
+        .type = INPUT_EVENT_KIND_KEY,
+        .key = { .key = lnx, .down = down },
+    };
+
+    qemu_input_batch_event(b, &evt);
+    qemu_input_batch_sync(b);
+}
+
+void qemu_input_batch_btn(QemuInputBatch *b, InputButton btn, bool down)
+{
+    QemuInputEvent evt = {
+        .type = INPUT_EVENT_KIND_BTN,
+        .btn = { .button = btn, .down = down },
+    };
+
+    qemu_input_batch_event(b, &evt);
+    qemu_input_batch_sync(b);
+}
+
+void qemu_input_batch_move(QemuInputBatch *b, InputEventKind kind,
+                           int x, int y)
+{
+    QemuInputEvent evt = { .type = kind };
+
+    evt.rel.axis = INPUT_AXIS_X;
+    evt.rel.value = x;
+    qemu_input_batch_event(b, &evt);
+    evt.rel.axis = INPUT_AXIS_Y;
+    evt.rel.value = y;
+    qemu_input_batch_event(b, &evt);
+    qemu_input_batch_sync(b);
+}
+
+size_t qemu_input_batch_length(QemuInputBatch *b)
+{
+    return b->count;
+}
+
+uint64_t qemu_input_batch_submit(QemuInputBatch *b, void *owner,
+                                 QemuInputBatchDone *done, void *opaque,
+                                 Error **errp)
+{
+    QemuInputLane *lane;
+    QemuInputPending *p;
+    QemuInputItem *item;
+    uint64_t id;
+
+    if (b->count > QEMU_INPUT_BATCH_MAX) {
+        error_setg(errp, "too much input at once (%zu events, at most %d)",
+                   b->count, QEMU_INPUT_BATCH_MAX);
+        qemu_input_batch_free(b);
+        return 0;
+    }
+
+    id = input_next_batch++;
+    p = g_new0(QemuInputPending, 1);
+    p->id = id;
+    p->owner = owner;
+    p->done = done;
+    p->opaque = opaque;
+    QTAILQ_INSERT_TAIL(&input_pending, p, node);
+
+    lane = qemu_input_lane_get(b->con);
+    while ((item = QSIMPLEQ_FIRST(&b->items))) {
+        QSIMPLEQ_REMOVE_HEAD(&b->items, node);
+        item->batch = id;
+        QSIMPLEQ_INSERT_TAIL(&lane->items, item, node);
+    }
+    item = qemu_input_item_new(QEMU_INPUT_ITEM_END);
+    item->batch = id;
+    QSIMPLEQ_INSERT_TAIL(&lane->items, item, node);
+    g_free(b);
+
+    qemu_input_lane_run(lane);
+    return id;
+}
+
+/* Release what @match pressed; @match NULL releases everything */
+static void qemu_input_release(bool (*match)(QemuInputHeld *, void *),
+                               void *opaque)
+{
+    QemuInputHeld *h, *next;
+    QemuInputEvent evt;
+    bool any = false;
+
+    QTAILQ_FOREACH_SAFE(h, &input_held, node, next) {
+        if (!match(h, opaque)) {
+            continue;
+        }
+        QTAILQ_REMOVE(&input_held, h, node);
+        if (h->is_button) {
+            evt.type = INPUT_EVENT_KIND_BTN;
+            evt.btn.button = h->code;
+            evt.btn.down = false;
+        } else {
+            evt.type = INPUT_EVENT_KIND_KEY;
+            evt.key.key = h->code;
+            evt.key.down = false;
+        }
+        qemu_input_deliver(0, h->src, &evt);
+        any = true;
+        g_free(h);
+    }
+    if (any) {
+        input_scheduler_delivering++;
+        qemu_input_event_sync();
+        input_scheduler_delivering--;
     }
 }
 
-static void qemu_input_queue_event(QemuInputEventQueueHead *queue,
-                                   QemuConsole *src, QemuInputEvent *evt)
+static bool qemu_input_held_by_batch(QemuInputHeld *h, void *opaque)
 {
-    QemuInputEventQueue *item = g_new0(QemuInputEventQueue, 1);
-
-    item->type = QEMU_INPUT_QUEUE_EVENT;
-    item->src = src;
-    item->evt = *evt;
-    QTAILQ_INSERT_TAIL(queue, item, node);
-    queue_count++;
+    return h->batch == *(uint64_t *)opaque;
 }
 
-static void qemu_input_queue_sync(QemuInputEventQueueHead *queue)
+static bool qemu_input_held_by_owner(QemuInputHeld *h, void *opaque)
 {
-    QemuInputEventQueue *item = g_new0(QemuInputEventQueue, 1);
+    return h->owner == opaque;
+}
 
-    item->type = QEMU_INPUT_QUEUE_SYNC;
-    QTAILQ_INSERT_TAIL(queue, item, node);
-    queue_count++;
+/* Drop the queued items of batch @id from its lane */
+static void qemu_input_batch_unqueue(uint64_t id)
+{
+    QemuInputLane *lane;
+    QemuInputItem *item, *next;
+
+    QTAILQ_FOREACH(lane, &input_lanes, node) {
+        bool head_removed = false;
+
+        QSIMPLEQ_FOREACH_SAFE(item, &lane->items, node, next) {
+            if (item->batch != id) {
+                continue;
+            }
+            if (item == QSIMPLEQ_FIRST(&lane->items)) {
+                head_removed = true;
+            }
+            QSIMPLEQ_REMOVE(&lane->items, item, QemuInputItem, node);
+            g_free(item);
+        }
+        if (head_removed && lane->waiting) {
+            /* the delay that was running belonged to this batch */
+            timer_del(lane->timer);
+            lane->waiting = false;
+            qemu_input_lane_run(lane);
+        }
+    }
+}
+
+void qemu_input_batch_cancel(uint64_t id)
+{
+    if (!qemu_input_pending_find(id)) {
+        return;
+    }
+    qemu_input_batch_unqueue(id);
+    qemu_input_release(qemu_input_held_by_batch, &id);
+    qemu_input_batch_finish(id, true);
+}
+
+void qemu_input_release_owner(void *owner)
+{
+    QemuInputPending *p, *next;
+
+    QTAILQ_FOREACH_SAFE(p, &input_pending, node, next) {
+        if (p->owner == owner) {
+            qemu_input_batch_cancel(p->id);
+        }
+    }
+    qemu_input_release(qemu_input_held_by_owner, owner);
+}
+
+bool qemu_input_scheduler_delivering(void)
+{
+    return input_scheduler_delivering > 0;
+}
+
+uint64_t qemu_input_foreign_mouse_count(void)
+{
+    return input_foreign_mouse;
+}
+
+typedef struct QemuInputRun {
+    QemuInputCtx *ctx;
+    bool done;
+    bool cancelled;
+} QemuInputRun;
+
+static void qemu_input_run_done(void *opaque, bool cancelled)
+{
+    QemuInputRun *run = opaque;
+
+    run->done = true;
+    run->cancelled = cancelled;
+    run->ctx->batch = 0;
+    qemu_co_sleep_wake(&run->ctx->sleep);
+}
+
+bool coroutine_fn qemu_input_co_run(QemuInputCtx *ctx, QemuInputBatch *b,
+                                    Error **errp)
+{
+    QemuInputRun run = { .ctx = ctx };
+    uint64_t id;
+
+    if (ctx->cancelled) {
+        qemu_input_batch_free(b);
+        error_setg(errp, "cancelled");
+        return false;
+    }
+    id = qemu_input_batch_submit(b, ctx->owner, qemu_input_run_done, &run,
+                                 errp);
+    if (!id) {
+        return false;
+    }
+    if (!run.done) {
+        ctx->batch = id;
+    }
+    while (!run.done) {
+        qemu_co_sleep(&ctx->sleep);
+    }
+    if (run.cancelled || ctx->cancelled) {
+        error_setg(errp, "cancelled");
+        return false;
+    }
+    return true;
+}
+
+static QLIST_HEAD(, QemuInputCtx) input_ctxs =
+    QLIST_HEAD_INITIALIZER(input_ctxs);
+
+void qemu_input_ctx_init(QemuInputCtx *ctx, void *owner)
+{
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->owner = owner;
+    ctx->active = true;
+    QLIST_INSERT_HEAD(&input_ctxs, ctx, node);
+}
+
+void qemu_input_ctx_end(QemuInputCtx *ctx)
+{
+    if (ctx->active) {
+        QLIST_REMOVE(ctx, node);
+        ctx->active = false;
+    }
+}
+
+void qemu_input_cancel_all(void)
+{
+    QemuInputPending *p, *next;
+    QemuInputCtx *ctx;
+
+    QLIST_FOREACH(ctx, &input_ctxs, node) {
+        qemu_input_ctx_cancel(ctx);
+    }
+    QTAILQ_FOREACH_SAFE(p, &input_pending, node, next) {
+        qemu_input_batch_cancel(p->id);
+    }
+}
+
+void qemu_input_ctx_cancel(QemuInputCtx *ctx)
+{
+    ctx->cancelled = true;
+    if (ctx->batch) {
+        qemu_input_batch_cancel(ctx->batch);
+    }
+    qemu_co_sleep_wake(&ctx->sleep);
 }
 
 void qemu_input_event_send_impl(QemuConsole *src, QemuInputEvent *evt)
@@ -367,6 +865,9 @@ void qemu_input_event_send(QemuConsole *src, QemuInputEvent *evt)
         return;
     }
 
+    if (!input_scheduler_delivering && evt->type != INPUT_EVENT_KIND_KEY) {
+        input_foreign_mouse++;
+    }
     replay_input_event(src, evt);
 }
 
@@ -399,21 +900,14 @@ void qemu_input_event_sync(void)
 void qemu_input_event_send_key_linux(QemuConsole *src, unsigned int lnx,
                                      bool down)
 {
-    QemuInputEvent evt = {
-        .type = INPUT_EVENT_KIND_KEY,
-        .key = {
-            .key = lnx,
-            .down = down,
-        },
-    };
+    QemuInputItem *item = qemu_input_item_new(QEMU_INPUT_ITEM_EVENT);
 
-    if (QTAILQ_EMPTY(&kbd_queue)) {
-        qemu_input_event_send(src, &evt);
-        qemu_input_event_sync();
-    } else if (queue_count < queue_limit) {
-        qemu_input_queue_event(&kbd_queue, src, &evt);
-        qemu_input_queue_sync(&kbd_queue);
-    }
+    item->src = src;
+    item->evt.type = INPUT_EVENT_KIND_KEY;
+    item->evt.key.key = lnx;
+    item->evt.key.down = down;
+    qemu_input_legacy_append(item);
+    qemu_input_legacy_append(qemu_input_item_new(QEMU_INPUT_ITEM_SYNC));
 }
 
 void qemu_input_event_send_key_number(QemuConsole *src, int num, bool down)
@@ -424,19 +918,15 @@ void qemu_input_event_send_key_number(QemuConsole *src, int num, bool down)
 
 void qemu_input_event_send_key_delay(uint32_t delay_ms)
 {
+    QemuInputItem *item;
+
     if (!runstate_is_running() && !runstate_check(RUN_STATE_SUSPENDED)) {
         return;
     }
 
-    if (!kbd_timer) {
-        kbd_timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL,
-                                   SCALE_MS, QEMU_TIMER_ATTR_EXTERNAL,
-                                   qemu_input_queue_process, &kbd_queue);
-    }
-    if (queue_count < queue_limit) {
-        qemu_input_queue_delay(&kbd_queue, kbd_timer,
-                               delay_ms ? delay_ms : kbd_default_delay_ms);
-    }
+    item = qemu_input_item_new(QEMU_INPUT_ITEM_DELAY);
+    item->delay_ms = delay_ms ? delay_ms : kbd_default_delay_ms;
+    qemu_input_legacy_append(item);
 }
 
 void qemu_input_queue_btn(QemuConsole *src, InputButton btn, bool down)
@@ -474,6 +964,18 @@ bool qemu_input_is_absolute(const QemuConsole *con)
     s = qemu_input_find_handler(INPUT_EVENT_MASK_REL | INPUT_EVENT_MASK_ABS,
                                 con);
     return (s != NULL) && (s->handler->mask & INPUT_EVENT_MASK_ABS);
+}
+
+const char *qemu_input_mouse_kind(const QemuConsole *con)
+{
+    QemuInputHandlerState *s;
+
+    s = qemu_input_find_handler(INPUT_EVENT_MASK_REL | INPUT_EVENT_MASK_ABS,
+                                con);
+    if (!s) {
+        return "none";
+    }
+    return (s->handler->mask & INPUT_EVENT_MASK_ABS) ? "absolute" : "relative";
 }
 
 uint32_t qemu_input_get_leds_mask(const QemuConsole *con)

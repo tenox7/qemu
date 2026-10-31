@@ -58,6 +58,12 @@ void kbd_layout_free(kbd_layout_t *k);
 int keysym2scancode(kbd_layout_t *k, int keysym,
                     QKbdState *kbd, bool down);
 int keycode_is_keypad(kbd_layout_t *k, int keycode);
+/*
+ * Store in @codes up to @max key numbers (with SCANCODE_SHIFT,
+ * SCANCODE_ALTGR and SCANCODE_CTRL flags) that type @keysym in layout
+ * @k.  Returns how many were found.
+ */
+int keysym2scancodes(kbd_layout_t *k, int keysym, uint16_t *codes, int max);
 int keysym_is_numlock(kbd_layout_t *k, int keysym);
 
 #endif /* QEMU_KEYMAPS_H */

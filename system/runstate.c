@@ -64,6 +64,7 @@
 #include "system/system.h"
 #include "system/tpm.h"
 #include "ui/console.h"
+#include "ui/input.h"
 
 #include "trace.h"
 
@@ -1175,6 +1176,8 @@ void qemu_cleanup(int status)
     tpm_cleanup();
     net_cleanup();
     audio_cleanup();
+    /* commands waiting for input or the screen must not hold up exit */
+    qemu_input_cancel_all();
     monitor_cleanup();
     qemu_chr_cleanup();
     qemu_display_cleanup();

@@ -2,6 +2,7 @@
 #define INPUT_H
 
 #include "qapi/qapi-types-ui.h"
+#include "qemu/coroutine.h"
 #include "qemu/notify.h"
 
 #define INPUT_EVENT_MASK_KEY   (1<<INPUT_EVENT_KIND_KEY)
@@ -63,6 +64,70 @@ void qemu_input_event_send_key_linux(QemuConsole *src, unsigned int lnx,
                                      bool down);
 void qemu_input_event_send_key_number(QemuConsole *src, int num, bool down);
 void qemu_input_event_send_key_delay(uint32_t delay_ms);
+
+/*
+ * The input scheduler: queue events with delays between them, in
+ * order, and learn when they have been delivered.  Delays run on the
+ * guest clock.
+ */
+typedef struct QemuInputBatch QemuInputBatch;
+typedef void QemuInputBatchDone(void *opaque, bool cancelled);
+
+QemuInputBatch *qemu_input_batch_new(QemuConsole *con);
+void qemu_input_batch_free(QemuInputBatch *b);
+void qemu_input_batch_event(QemuInputBatch *b, QemuInputEvent *evt);
+void qemu_input_batch_sync(QemuInputBatch *b);
+void qemu_input_batch_delay(QemuInputBatch *b, uint32_t delay_ms);
+void qemu_input_batch_key(QemuInputBatch *b, unsigned int lnx, bool down);
+void qemu_input_batch_btn(QemuInputBatch *b, InputButton btn, bool down);
+void qemu_input_batch_move(QemuInputBatch *b, InputEventKind kind,
+                           int x, int y);
+size_t qemu_input_batch_length(QemuInputBatch *b);
+/*
+ * Queue @b (and take ownership of it) behind the earlier input for its
+ * console.  @done runs once the last event is delivered, or at once on
+ * cancel.  Returns the batch id, or 0 with @errp set.
+ */
+uint64_t qemu_input_batch_submit(QemuInputBatch *b, void *owner,
+                                 QemuInputBatchDone *done, void *opaque,
+                                 Error **errp);
+void qemu_input_batch_cancel(uint64_t id);
+/* Cancel all batches of @owner and release every key and button it holds */
+void qemu_input_release_owner(void *owner);
+/* True while the scheduler itself is delivering an event */
+bool qemu_input_scheduler_delivering(void);
+/* Counts mouse events that did not come from the scheduler */
+uint64_t qemu_input_foreign_mouse_count(void);
+
+/*
+ * One caller of the scheduler, for example one MCP tool call.  The
+ * caller's coroutine sleeps on @sleep; qemu_input_ctx_cancel() stops
+ * the batch in flight and wakes it.
+ */
+typedef struct QemuInputCtx {
+    void *owner;
+    QemuCoSleep sleep;
+    bool cancelled;
+    uint64_t batch;
+    bool active;
+    QLIST_ENTRY(QemuInputCtx) node;
+} QemuInputCtx;
+
+/*
+ * A context is active from init to end, so qemu_input_cancel_all() can
+ * stop it.  Without that, a command still waiting at exit would keep
+ * the monitor, and so QEMU, from finishing.
+ */
+void qemu_input_ctx_init(QemuInputCtx *ctx, void *owner);
+void qemu_input_ctx_end(QemuInputCtx *ctx);
+G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC(QemuInputCtx, qemu_input_ctx_end)
+void qemu_input_cancel_all(void);
+
+/* Submit @b and sleep until it is delivered.  False on error or cancel. */
+bool coroutine_fn qemu_input_co_run(QemuInputCtx *ctx, QemuInputBatch *b,
+                                    Error **errp);
+void qemu_input_ctx_cancel(QemuInputCtx *ctx);
+
 int qemu_input_key_number_to_qcode(unsigned int nr);
 unsigned int qemu_input_key_number_to_linux(unsigned int nr);
 unsigned int qemu_input_key_value_to_linux(const KeyValue *value);
@@ -74,6 +139,8 @@ void qemu_input_update_buttons(QemuConsole *src, uint32_t *button_map,
                                uint32_t button_old, uint32_t button_new);
 
 bool qemu_input_is_absolute(const QemuConsole *con);
+/* "absolute", "relative" or "none" */
+const char *qemu_input_mouse_kind(const QemuConsole *con);
 int qemu_input_scale_axis(int value,
                           int min_in, int max_in,
                           int min_out, int max_out);

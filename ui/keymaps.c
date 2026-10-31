@@ -202,6 +202,21 @@ kbd_layout_t *kbd_layout_new(const name2keysym_t *table,
 }
 
 
+int keysym2scancodes(kbd_layout_t *k, int keysym, uint16_t *codes, int max)
+{
+    struct keysym2code *keysym2code;
+    int i;
+
+    keysym2code = g_hash_table_lookup(k->hash, GINT_TO_POINTER(keysym));
+    if (!keysym2code) {
+        return 0;
+    }
+    for (i = 0; i < keysym2code->count && i < max; i++) {
+        codes[i] = keysym2code->keycodes[i];
+    }
+    return i;
+}
+
 int keysym2scancode(kbd_layout_t *k, int keysym,
                     QKbdState *kbd, bool down)
 {
