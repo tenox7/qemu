@@ -25,16 +25,17 @@ It emulates **old computers**, and it is made to be used **with AI agents**.
 |---|---|
 | Siemens Nixdorf RM200 and RM300 (MIPS) | Windows NT 4.0, SINIX-N 5.45 |
 | MIPS Magnum (Jazz) | Windows NT 3.1 |
+| DEC Jensen (DECpc AXP 150, Alpha) | Windows NT 3.1, Windows NT 4.0 |
 
 Coming next, from the machine branches:
 
 - IBM 40p PReP: AIX, Windows NT, OS/2, Solaris
 - IBM pSeries: AIX
-- DEC Alpha Jensen and PC: Windows NT 3.1
+- Intel PC: Windows NT 3.1
 
 ## Build
 
-    ./configure --target-list=mips64el-softmmu,mips64-softmmu
+    ./configure --target-list=mips64el-softmmu,mips64-softmmu,alpha-softmmu
     make
 
 - You need the same tools as for QEMU, and Python 3.12 or newer.

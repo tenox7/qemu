@@ -29,8 +29,8 @@ used by AI agents, so AI-written code is welcome here.
 - **Ask first** before you push, delete branches or change GitHub
   settings.
 - **Before a release,** run the feature check (see
-  `machines/rm200/release/README.md`). A guest that boots can still be
-  missing a window, its sound or the git id.
+  `machines/<machine>/release/README.md`). A guest that boots can still
+  be missing a window, its sound or the git id.
 - **Finding your way in the QEMU code:** use the skill in
   `.agents/skills/qemu-codebase`.
 
