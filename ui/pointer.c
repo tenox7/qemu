@@ -11,7 +11,9 @@
  * - open loop: push the pointer into the top-left corner, where guests
  *   clamp it, then step to the target in moves small enough to stay
  *   below guest acceleration, paced so the mouse device does not merge
- *   them into bigger moves.
+ *   them into bigger moves.  Some guests speed up any move bigger than
+ *   a pixel, so the first open loop move measures how big a step the
+ *   guest takes as it is.
  *
  * The model forgets the position when something else moves the mouse,
  * when the screen size changes, and on reset.
@@ -34,6 +36,8 @@
 #define POINTER_LOOP_MAX        300     /* closed-loop iterations */
 #define POINTER_POLL_MS         10
 #define POINTER_SETTLE_MS       150
+#define POINTER_CAL_DIST        48      /* px each calibration move covers */
+#define POINTER_CAL_SLACK       2       /* px two landings may differ */
 
 typedef struct QemuPointer {
     QemuConsole *con;
@@ -46,6 +50,10 @@ typedef struct QemuPointer {
     /* closed loop: hotspot minus the cursor image's top-left corner */
     bool has_offset;
     int off_x, off_y;
+    /* open loop: the biggest step the guest takes as it is; 0: unknown */
+    bool cal_done;
+    int cal_step;
+    int cal_w, cal_h;           /* the screen size it was measured at */
     QLIST_ENTRY(QemuPointer) node;
 } QemuPointer;
 
@@ -58,6 +66,7 @@ static void pointer_reset(void *opaque)
     QLIST_FOREACH(p, &pointers, node) {
         p->known = false;
         p->has_offset = false;
+        p->cal_done = false;    /* another guest may boot */
     }
 }
 
@@ -106,6 +115,7 @@ void qemu_pointer_opts_init(QemuPointerOpts *o)
     o->method = QEMU_POINTER_AUTO;
     o->home = QEMU_POINTER_HOME_AUTO;
     o->step_px = 4;
+    o->step_auto = true;
     o->step_delay_ms = 20;
 }
 
@@ -191,6 +201,172 @@ static bool coroutine_fn pointer_co_absolute(QemuPointer *p,
     return true;
 }
 
+#define POINTER_WIGGLE          12      /* px for wiggle-and-diff */
+#define POINTER_WIGGLE_MAX_BOX  128     /* a bigger change is not the pointer */
+
+/* Bounding box of the pixels that differ between @a and @b */
+static bool pointer_diff_box(pixman_image_t *a, pixman_image_t *b,
+                             int *x0, int *y0, int *x1, int *y1)
+{
+    int w = pixman_image_get_width(a), h = pixman_image_get_height(a);
+    int sa = pixman_image_get_stride(a) / 4;
+    int sb = pixman_image_get_stride(b) / 4;
+    uint32_t *da = pixman_image_get_data(a), *db = pixman_image_get_data(b);
+    int x, y;
+
+    *x0 = w;
+    *y0 = h;
+    *x1 = *y1 = -1;
+    if (w != pixman_image_get_width(b) || h != pixman_image_get_height(b)) {
+        return false;
+    }
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            if ((da[y * sa + x] ^ db[y * sb + x]) & 0xffffff) {
+                *x0 = MIN(*x0, x);
+                *y0 = MIN(*y0, y);
+                *x1 = MAX(*x1, x);
+                *y1 = MAX(*y1, y);
+            }
+        }
+    }
+    return *x1 >= 0;
+}
+
+static bool coroutine_fn pointer_co_nudge(QemuInputCtx *ctx, QemuConsole *con,
+                                          int dx, int dy, Error **errp)
+{
+    QemuInputBatch *b = qemu_input_batch_new(con);
+
+    qemu_input_batch_move(b, INPUT_EVENT_KIND_REL, dx, dy);
+    qemu_input_batch_delay(b, POINTER_SETTLE_MS);
+    return qemu_input_co_run(ctx, b, errp);
+}
+
+/*
+ * Find the pointer without the card's cursor: from the display's cursor
+ * if it reports one, else nudge the mouse and look at what moved; the
+ * old pointer image's top-left corner is the top-left of the change.
+ */
+static bool coroutine_fn pointer_co_find(QemuConsole *con, QemuInputCtx *ctx,
+                                         int *x, int *y, const char **how,
+                                         Error **errp)
+{
+    g_autoptr(pixman_image_t) before = NULL;
+    g_autoptr(pixman_image_t) after = NULL;
+    int x0, y0, x1, y1;
+    bool on;
+
+    if (qemu_frames_get_hw_cursor(qemu_console_frames(con), x, y, &on) &&
+        on) {
+        *how = "display cursor";
+        return true;
+    }
+    before = qemu_console_co_capture(con, NULL, 1.0, errp);
+    if (!before ||
+        !pointer_co_nudge(ctx, con, POINTER_WIGGLE, POINTER_WIGGLE, errp)) {
+        return false;
+    }
+    after = qemu_console_co_capture(con, NULL, 1.0, errp);
+    if (!after ||
+        !pointer_co_nudge(ctx, con, -POINTER_WIGGLE, -POINTER_WIGGLE, errp)) {
+        return false;
+    }
+    if (!pointer_diff_box(before, after, &x0, &y0, &x1, &y1)) {
+        error_setg(errp, "nothing on the screen moved with the mouse; the "
+                   "guest may draw no pointer here");
+        return false;
+    }
+    if (x1 - x0 > POINTER_WIGGLE_MAX_BOX || y1 - y0 > POINTER_WIGGLE_MAX_BOX) {
+        error_setg(errp, "the screen changed in %d,%d %dx%d while the mouse "
+                   "moved, too much to be the pointer; try again when it is "
+                   "still", x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+        return false;
+    }
+    *x = x0;
+    *y = y0;
+    *how = "screen diff, pointer image corner (approximate)";
+    return true;
+}
+
+static bool pointer_cal_valid(QemuPointer *p, int w, int h)
+{
+    return p->cal_done && p->cal_w == w && p->cal_h == h;
+}
+
+/* Home, then step POINTER_CAL_DIST px down and right; where did it land? */
+static bool coroutine_fn pointer_co_cal_probe(QemuPointer *p,
+                                              QemuInputCtx *ctx,
+                                              int w, int h, int step,
+                                              const QemuPointerOpts *o,
+                                              int *x, int *y, Error **errp)
+{
+    QemuInputBatch *b = qemu_input_batch_new(p->con);
+    const char *how;
+    int i;
+
+    pointer_add_homing(b, w, h, -1, o->step_delay_ms);
+    for (i = 0; i < POINTER_CAL_DIST / step; i++) {
+        qemu_input_batch_move(b, INPUT_EVENT_KIND_REL, step, step);
+        qemu_input_batch_delay(b, o->step_delay_ms);
+    }
+    qemu_input_batch_delay(b, POINTER_SETTLE_MS);
+    return qemu_input_co_run(ctx, b, errp) &&
+           pointer_co_find(p->con, ctx, x, y, &how, errp);
+}
+
+/*
+ * Find the biggest step that lands where 1-pixel steps land, so the
+ * guest does not speed it up.  Both landings are found the same way, so
+ * the hotspot of the pointer image cancels out.  If the pointer cannot
+ * be found, the default step stays.  False only if cancelled.
+ */
+static bool coroutine_fn pointer_co_calibrate(QemuPointer *p,
+                                              QemuInputCtx *ctx,
+                                              int w, int h,
+                                              const QemuPointerOpts *o,
+                                              Error **errp)
+{
+    static const int steps[] = { 4, 2 };
+    Error *local_err = NULL;
+    int rx, ry, x, y, i;
+
+    p->cal_done = true;
+    p->cal_w = w;
+    p->cal_h = h;
+    p->cal_step = 0;
+    if (!pointer_co_cal_probe(p, ctx, w, h, 1, o, &rx, &ry, &local_err)) {
+        goto out;
+    }
+    for (i = 0; i < ARRAY_SIZE(steps); i++) {
+        if (steps[i] > MAX(1, o->step_px)) {
+            continue;
+        }
+        if (!pointer_co_cal_probe(p, ctx, w, h, steps[i], o, &x, &y,
+                                  &local_err)) {
+            goto out;
+        }
+        if (abs(x - rx) <= POINTER_CAL_SLACK &&
+            abs(y - ry) <= POINTER_CAL_SLACK) {
+            p->cal_step = steps[i];
+            break;
+        }
+    }
+    if (!p->cal_step) {
+        p->cal_step = 1;
+    }
+
+out:
+    trace_pointer_calibrate(qemu_console_get_index(p->con), p->cal_step,
+                            local_err ? error_get_pretty(local_err) : "");
+    if (local_err && ctx->cancelled) {
+        error_propagate(errp, local_err);
+        return false;
+    }
+    error_free(local_err);
+    return true;
+}
+
 /* Step from the model's position (homing first if needed) to @x, @y */
 static bool coroutine_fn pointer_co_open_loop(QemuPointer *p,
                                               QemuInputCtx *ctx,
@@ -220,6 +396,20 @@ static bool coroutine_fn pointer_co_open_loop(QemuPointer *p,
         res->homed = !valid || now - p->sync_ms > POINTER_STALE_MS;
         break;
     }
+
+    if (o->step_auto && o->home != QEMU_POINTER_HOME_NEVER &&
+        !pointer_cal_valid(p, w, h)) {
+        if (!pointer_co_calibrate(p, ctx, w, h, o, errp)) {
+            p->known = false;
+            return false;
+        }
+        res->calibrated = true;
+        res->homed = true;      /* it left the pointer somewhere else */
+    }
+    if (o->step_auto && pointer_cal_valid(p, w, h) && p->cal_step) {
+        step = MIN(step, p->cal_step);
+    }
+    res->step_px = step;
 
     b = qemu_input_batch_new(p->con);
     if (res->homed) {
@@ -461,6 +651,10 @@ bool coroutine_fn qemu_pointer_co_move_by(QemuConsole *con, QemuInputCtx *ctx,
 
     /* position unknown: just send the steps */
     memset(res, 0, sizeof(*res));
+    if (o->step_auto && pointer_cal_valid(p, w, h) && p->cal_step) {
+        step = MIN(step, p->cal_step);
+    }
+    res->step_px = step;
     b = qemu_input_batch_new(con);
     while (dx || dy) {
         int sx = clamp_step(dx, step);
@@ -476,48 +670,6 @@ bool coroutine_fn qemu_pointer_co_move_by(QemuConsole *con, QemuInputCtx *ctx,
     return qemu_input_co_run(ctx, b, errp);
 }
 
-#define POINTER_WIGGLE          12      /* px for wiggle-and-diff */
-#define POINTER_WIGGLE_MAX_BOX  128     /* a bigger change is not the pointer */
-
-/* Bounding box of the pixels that differ between @a and @b */
-static bool pointer_diff_box(pixman_image_t *a, pixman_image_t *b,
-                             int *x0, int *y0, int *x1, int *y1)
-{
-    int w = pixman_image_get_width(a), h = pixman_image_get_height(a);
-    int sa = pixman_image_get_stride(a) / 4;
-    int sb = pixman_image_get_stride(b) / 4;
-    uint32_t *da = pixman_image_get_data(a), *db = pixman_image_get_data(b);
-    int x, y;
-
-    *x0 = w;
-    *y0 = h;
-    *x1 = *y1 = -1;
-    if (w != pixman_image_get_width(b) || h != pixman_image_get_height(b)) {
-        return false;
-    }
-    for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-            if ((da[y * sa + x] ^ db[y * sb + x]) & 0xffffff) {
-                *x0 = MIN(*x0, x);
-                *y0 = MIN(*y0, y);
-                *x1 = MAX(*x1, x);
-                *y1 = MAX(*y1, y);
-            }
-        }
-    }
-    return *x1 >= 0;
-}
-
-static bool coroutine_fn pointer_co_nudge(QemuInputCtx *ctx, QemuConsole *con,
-                                          int dx, int dy, Error **errp)
-{
-    QemuInputBatch *b = qemu_input_batch_new(con);
-
-    qemu_input_batch_move(b, INPUT_EVENT_KIND_REL, dx, dy);
-    qemu_input_batch_delay(b, POINTER_SETTLE_MS);
-    return qemu_input_co_run(ctx, b, errp);
-}
-
 bool coroutine_fn qemu_pointer_co_locate(QemuConsole *con, QemuInputCtx *ctx,
                                          QemuPointerResult *res,
                                          const char **how, Error **errp)
@@ -525,11 +677,8 @@ bool coroutine_fn qemu_pointer_co_locate(QemuConsole *con, QemuInputCtx *ctx,
     int w = qemu_console_get_width(con, 0);
     int h = qemu_console_get_height(con, 0);
     QemuPointer *p = pointer_find(con, true);
-    g_autoptr(pixman_image_t) before = NULL;
-    g_autoptr(pixman_image_t) after = NULL;
     QemuCursorState cs;
-    int x, y, x0, y0, x1, y1;
-    bool on;
+    int x, y;
 
     memset(res, 0, sizeof(*res));
     if (qemu_input_is_absolute(con)) {
@@ -553,37 +702,10 @@ bool coroutine_fn qemu_pointer_co_locate(QemuConsole *con, QemuInputCtx *ctx,
         }
         goto found_model;
     }
-    if (qemu_frames_get_hw_cursor(qemu_console_frames(con), &x, &y, &on) &&
-        on) {
-        pointer_set(p, x, y, w, h, QEMU_POINTER_OPEN_LOOP);
-        *how = "display cursor";
-        goto found_model;
-    }
-
-    /* wiggle and diff: the old pointer is at the top-left of the change */
-    before = qemu_console_co_capture(con, NULL, 1.0, errp);
-    if (!before ||
-        !pointer_co_nudge(ctx, con, POINTER_WIGGLE, POINTER_WIGGLE, errp)) {
+    if (!pointer_co_find(con, ctx, &x, &y, how, errp)) {
         return false;
     }
-    after = qemu_console_co_capture(con, NULL, 1.0, errp);
-    if (!after ||
-        !pointer_co_nudge(ctx, con, -POINTER_WIGGLE, -POINTER_WIGGLE, errp)) {
-        return false;
-    }
-    if (!pointer_diff_box(before, after, &x0, &y0, &x1, &y1)) {
-        error_setg(errp, "nothing on the screen moved with the mouse; the "
-                   "guest may draw no pointer here");
-        return false;
-    }
-    if (x1 - x0 > POINTER_WIGGLE_MAX_BOX || y1 - y0 > POINTER_WIGGLE_MAX_BOX) {
-        error_setg(errp, "the screen changed in %d,%d %dx%d while the mouse "
-                   "moved, too much to be the pointer; try again when it is "
-                   "still", x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-        return false;
-    }
-    pointer_set(p, x0, y0, w, h, QEMU_POINTER_OPEN_LOOP);
-    *how = "screen diff, pointer image corner (approximate)";
+    pointer_set(p, x, y, w, h, QEMU_POINTER_OPEN_LOOP);
 
 found_model:
     res->known = true;

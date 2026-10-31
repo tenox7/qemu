@@ -1078,7 +1078,16 @@ static void mcp_pointer_result(McpInputResult *res, QemuConsole *con,
     res->homed = pr->homed;
     res->has_steps = true;
     res->steps = pr->steps;
-    if (pr->homed) {
+    if (pr->step_px) {
+        res->has_step_px = true;
+        res->step_px = pr->step_px;
+    }
+    if (pr->calibrated) {
+        res->has_calibrated = true;
+        res->calibrated = true;
+        g_string_append_printf(summary, " (calibrated first: the guest does "
+                               "not speed up steps of %d px)", pr->step_px);
+    } else if (pr->homed) {
         g_string_append(summary, " (homed first)");
     }
 }
@@ -1122,6 +1131,7 @@ McpInputResult *coroutine_fn qmp_mouse_move(bool has_x, int64_t x,
     }
     if (has_step_px) {
         o.step_px = MAX(1, step_px);
+        o.step_auto = false;
     }
     if (has_step_delay_ms) {
         o.step_delay_ms = MAX(0, step_delay_ms);
@@ -1286,6 +1296,7 @@ McpInputResult *coroutine_fn qmp_mouse_drag(McpPoint *from, McpPoint *to,
     }
     if (has_step_px) {
         o.step_px = MAX(1, step_px);
+        o.step_auto = false;
     }
     if (has_step_delay_ms) {
         o.step_delay_ms = MAX(0, step_delay_ms);

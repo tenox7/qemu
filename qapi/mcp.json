@@ -193,6 +193,11 @@
 #
 # @steps: mouse move packets sent
 #
+# @step-px: open loop: the largest step sent
+#
+# @calibrated: this call first measured the largest step that the
+#     guest does not speed up; later calls use it
+#
 # @wait: the outcome of the wait in @then
 #
 # @warning: something the caller should know, e.g. Caps Lock is on
@@ -202,7 +207,8 @@
 { 'struct': 'McpInputResult',
   'base': 'McpResult',
   'data': { 'elapsed-ms': 'int', '*pointer': 'McpPointer',
-            '*homed': 'bool', '*steps': 'int', '*wait': 'McpWaitInfo',
+            '*homed': 'bool', '*steps': 'int', '*step-px': 'int',
+            '*calibrated': 'bool', '*wait': 'McpWaitInfo',
             '*warning': 'str' } }
 
 ##
@@ -568,7 +574,8 @@
 # @home: when to home the pointer first (default: auto)
 #
 # @step-px: open loop: largest step, keep it below guest acceleration
-#     (default: 4)
+#     (default: 4, or less if the guest speeds up 4-pixel moves; lemu
+#     measures that on the first open loop move)
 #
 # @step-delay-ms: open loop: pause between steps (default: 20)
 #
@@ -659,7 +666,7 @@
 # @press-wait-ms: pause after pressing and before releasing
 #     (default: 150)
 #
-# @step-px: largest step while dragging (default: 4)
+# @step-px: largest step while dragging (default: as for mouse-move)
 #
 # @step-delay-ms: pause between steps (default: 20)
 #

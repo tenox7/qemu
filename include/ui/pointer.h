@@ -27,6 +27,7 @@ typedef struct QemuPointerOpts {
     QemuPointerMethod method;
     QemuPointerHome home;
     int step_px;                /* open loop: largest step */
+    bool step_auto;             /* step_px is the default: calibrate */
     int step_delay_ms;          /* open loop: time between steps */
 } QemuPointerOpts;
 
@@ -34,6 +35,8 @@ typedef struct QemuPointerResult {
     QemuPointerMethod method;
     bool homed;
     int steps;
+    int step_px;                /* open loop: the largest step it used */
+    bool calibrated;            /* the step was measured in this call */
     bool known;
     int x, y;
 } QemuPointerResult;

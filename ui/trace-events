@@ -216,3 +216,4 @@ frames_change(int con, uint64_t frame, int x, int y, int w, int h, int pixels, b
 
 # pointer.c
 pointer_move(int con, int x, int y, const char *method, bool homed, int steps, bool ok) "con %d to %d,%d method %s homed %d steps %d ok %d"
+pointer_calibrate(int con, int step, const char *error) "con %d step %d error '%s'"
