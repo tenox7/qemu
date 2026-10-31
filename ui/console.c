@@ -233,6 +233,13 @@ void qemu_console_hw_text_update(QemuConsole *con, uint32_t *chardata)
     }
 }
 
+bool qemu_console_hw_cursor_state(QemuConsole *con, QemuCursorState *cs)
+{
+    memset(cs, 0, sizeof(*cs));
+    return con && con->hw_ops && con->hw_ops->cursor_state &&
+           con->hw_ops->cursor_state(con->hw, cs);
+}
+
 static void displaychangelistener_gfx_switch(DisplayChangeListener *dcl,
                                              struct DisplaySurface *new_surface,
                                              bool update)

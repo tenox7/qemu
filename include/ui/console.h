@@ -329,6 +329,17 @@ enum {
     GRAPHIC_FLAGS_DMABUF   = 1 << 1,
 };
 
+/*
+ * Where a display card draws its hardware cursor.  @x, @y is the
+ * top-left corner of the cursor image in framebuffer pixels; @w, @h is
+ * its size.  The hotspot inside the image is not known to the card.
+ */
+typedef struct QemuCursorState {
+    bool visible;
+    int x, y;
+    int w, h;
+} QemuCursorState;
+
 typedef struct GraphicHwOps {
     int (*get_flags)(void *opaque); /* optional, default 0 */
     void (*invalidate)(void *opaque);
@@ -342,6 +353,11 @@ typedef struct GraphicHwOps {
     void (*text_update)(void *opaque, uint32_t *text);
     void (*ui_info)(void *opaque, uint32_t head, QemuUIInfo *info);
     void (*gl_block)(void *opaque, bool block);
+    /*
+     * Optional: report the hardware cursor.  Returns false if the card
+     * has no hardware cursor in use.  Must not change any state.
+     */
+    bool (*cursor_state)(void *opaque, QemuCursorState *cs);
 } GraphicHwOps;
 
 QemuConsole *qemu_graphic_console_create(DeviceState *dev, uint32_t head,
@@ -356,6 +372,7 @@ void qemu_console_hw_update(QemuConsole *con);
 void qemu_console_hw_update_done(QemuConsole *con);
 void qemu_console_hw_invalidate(QemuConsole *con);
 void qemu_console_hw_text_update(QemuConsole *con, uint32_t *chardata);
+bool qemu_console_hw_cursor_state(QemuConsole *con, QemuCursorState *cs);
 void qemu_console_hw_gl_block(QemuConsole *con, bool block);
 
 void qemu_console_early_init(void);
