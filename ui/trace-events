@@ -213,3 +213,6 @@ egl_init_d3d11_device(void *p) "d3d device: %p"
 
 # frames.c
 frames_change(int con, uint64_t frame, int x, int y, int w, int h, int pixels, bool blink) "con %d frame %" PRIu64 " box %d,%d %dx%d pixels %d blink %d"
+
+# pointer.c
+pointer_move(int con, int x, int y, const char *method, bool homed, int steps, bool ok) "con %d to %d,%d method %s homed %d steps %d ok %d"
