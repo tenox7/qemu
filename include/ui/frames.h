@@ -36,10 +36,13 @@ typedef struct QemuFramesCond {
     uint32_t pixel_rgb;         /* 0xRRGGBB */
     int pixel_tolerance;        /* per channel */
     bool ignore_blink;          /* skip blinking text cursors */
+    bool ignore_animation;      /* skip areas that keep changing */
     /* the caller's sleep; waking it with @cancelled set ends the wait */
     QemuCoSleep *sleep;
     const bool *cancelled;
 } QemuFramesCond;
+
+#define QEMU_FRAMES_ANIM_MAX    8
 
 typedef struct QemuFramesResult {
     bool matched;
@@ -51,6 +54,9 @@ typedef struct QemuFramesResult {
     bool has_box;
     QemuFramesRect box;         /* union of the counted changes */
     uint64_t frame;
+    /* areas that kept changing on their own during the wait */
+    int n_animations;
+    QemuFramesRect animations[QEMU_FRAMES_ANIM_MAX];
 } QemuFramesResult;
 
 /*

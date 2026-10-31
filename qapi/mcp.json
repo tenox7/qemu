@@ -120,6 +120,9 @@
 # @stable-ms: how long the screen must not change to be stable
 #     (default: 1000)
 #
+# @ignore-animation: do not count areas that keep changing on their
+#     own, as in wait-screen (default: false)
+#
 # @screenshot: take a screenshot at the end (default: false)
 #
 # Since: 11.2
@@ -127,6 +130,7 @@
 { 'struct': 'McpThen',
   'data': { '*wait': 'McpWaitUntil', '*delay-ms': 'int',
             '*timeout-ms': 'int', '*stable-ms': 'int',
+            '*ignore-animation': 'bool',
             '*screenshot': 'McpScreenshotChoice' } }
 
 ##
@@ -148,13 +152,16 @@
 #
 # @frame: frame number at the end
 #
+# @animations: areas that kept changing on their own during the wait,
+#     such as a clock or a graph
+#
 # Since: 11.2
 ##
 { 'struct': 'McpWaitInfo',
   'data': { 'matched': 'bool', 'elapsed-ms': 'int',
             '*changed-after-ms': 'int', '*stable-after-ms': 'int',
             'changed-pixels': 'int', '*box': 'ScreenRegion',
-            'frame': 'int' } }
+            'frame': 'int', '*animations': [ 'ScreenRegion' ] } }
 
 ##
 # @McpPointer:
@@ -374,7 +381,8 @@
 #     colour.  Use it instead of sleeping.  change-then-stable waits
 #     for something to happen, then for it to settle.  Changes smaller
 #     than @min-pixels and blinking text cursors are not counted.  For
-#     long installs, call it in a loop.
+#     long installs, call it in a loop.  If a clock or a graph keeps
+#     the screen from settling, use @ignore-animation.
 #
 # @until: what to wait for
 #
@@ -398,6 +406,14 @@
 #
 # @ignore-blink: do not count blinking text cursors (default: true)
 #
+# @ignore-animation: do not count areas that keep changing on their
+#     own, such as a clock, a graph or a spinner: about the same area
+#     changed 3 or more times over most of a second, each within 2.5 s
+#     of the last.  Once seen, it is skipped until the wait ends, also
+#     when it pauses.
+#     Scrolling text looks the same, so do not use it to wait for
+#     command output (default: false)
+#
 # @screenshot: take a screenshot at the end (default: true)
 #
 # Features:
@@ -413,7 +429,7 @@
             '*region': 'ScreenRegion', '*ignore': [ 'ScreenRegion' ],
             '*min-pixels': 'int', '*stable-ms': 'int',
             '*timeout-ms': 'int', '*pixel': 'McpPixel',
-            '*ignore-blink': 'bool',
+            '*ignore-blink': 'bool', '*ignore-animation': 'bool',
             '*screenshot': 'McpScreenshotChoice' },
   'returns': 'McpWaitResult',
   'features': [ 'mcp', 'mcp-read-only' ],

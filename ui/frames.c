@@ -11,6 +11,16 @@
  * and again is a blinking text cursor.  Waits can ignore those, so a
  * blinking cursor never keeps a "stable" wait from finishing.
  *
+ * An area that keeps changing on its own, such as a clock, a graph or a
+ * spinner, is an animation: about the same box changed again and again
+ * for a while, never resting longer than FRAMES_ANIM_GAP_MS.  A window
+ * that paints itself in a quick burst is not one.  Each wait learns them
+ * from the recent history and while it waits, and then knows them until
+ * it ends, also across pauses: NT's logon screen moves a hand for a
+ * second every eight seconds.  A wait can ignore them, and it reports
+ * them, so a wait that never settles says why.  Scrolling text looks
+ * the same, so ignoring them is the caller's choice.
+ *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
@@ -30,6 +40,10 @@
 #define FRAMES_BLINK_SLOTS      8
 #define FRAMES_HISTORY_BYTES    (64 * 1024 * 1024)
 #define FRAMES_HISTORY_MAX      4096
+#define FRAMES_ANIM_CHANGES     3       /* changes in a row: an animation */
+#define FRAMES_ANIM_MIN_MS      750     /* ...going on this long: not a paint */
+#define FRAMES_ANIM_GAP_MS      2500    /* a longer rest while learning */
+#define FRAMES_ANIM_LOOKBACK_MS 10000   /* history a wait learns from */
 
 /*
  * History: each change keeps the old pixels of the box it changed, so
@@ -48,6 +62,12 @@ typedef struct QemuFramesUndo {
     QTAILQ_ENTRY(QemuFramesUndo) node;
 } QemuFramesUndo;
 
+typedef struct QemuFramesAnim {
+    QemuFramesRect box;
+    int changes;                /* 0: free */
+    int64_t first_ms, last_ms;
+} QemuFramesAnim;
+
 struct QemuFramesWaiter {
     const QemuFramesCond *cond;
     int64_t begin_ms;
@@ -56,6 +76,7 @@ struct QemuFramesWaiter {
     int pixels;
     bool has_box;
     QemuFramesRect box;
+    QemuFramesAnim anim[QEMU_FRAMES_ANIM_MAX];
     QLIST_ENTRY(QemuFramesWaiter) node;
 };
 
@@ -191,21 +212,124 @@ static void frames_box_add(bool *has_box, QemuFramesRect *box,
     box->h = y1 - box->y;
 }
 
+static int64_t frames_rect_area(const QemuFramesRect *r)
+{
+    return (int64_t)r->w * r->h;
+}
+
+/* Cut @r down to @to; false if nothing is left */
+static bool frames_rect_clip(QemuFramesRect *r, const QemuFramesRect *to)
+{
+    int x0 = MAX(r->x, to->x), y0 = MAX(r->y, to->y);
+    int x1 = MIN(r->x + r->w, to->x + to->w);
+    int y1 = MIN(r->y + r->h, to->y + to->h);
+
+    if (x1 <= x0 || y1 <= y0) {
+        return false;
+    }
+    *r = (QemuFramesRect) { x0, y0, x1 - x0, y1 - y0 };
+    return true;
+}
+
+static bool frames_rect_inside(const QemuFramesRect *r,
+                               const QemuFramesRect *in)
+{
+    return r->x >= in->x && r->y >= in->y &&
+           r->x + r->w <= in->x + in->w && r->y + r->h <= in->y + in->h;
+}
+
+/* Do @a and @b cover mostly the same pixels (overlap >= half the union)? */
+static bool frames_rect_same_area(const QemuFramesRect *a,
+                                  const QemuFramesRect *b)
+{
+    QemuFramesRect overlap = *a;
+
+    if (!frames_rect_clip(&overlap, b)) {
+        return false;
+    }
+    return 3 * frames_rect_area(&overlap) >=
+           frames_rect_area(a) + frames_rect_area(b);
+}
+
+/* An animation is too big if it covers more than a quarter of the screen */
+static int64_t frames_anim_max_area(QemuFrames *f)
+{
+    if (!f->prev) {
+        return 0;
+    }
+    return (int64_t)pixman_image_get_width(f->prev) *
+           pixman_image_get_height(f->prev) / 4;
+}
+
+static bool frames_anim_seen(const QemuFramesAnim *a)
+{
+    return a->changes >= FRAMES_ANIM_CHANGES &&
+           a->last_ms - a->first_ms >= FRAMES_ANIM_MIN_MS;
+}
+
+/* Learn from a change of @box at @now */
+static void frames_anim_feed(QemuFramesWaiter *wt, const QemuFramesRect *box,
+                             int64_t now, int64_t max_area)
+{
+    QemuFramesAnim *a, *oldest = &wt->anim[0];
+    bool has_box = true;
+    int i;
+
+    for (i = 0; i < QEMU_FRAMES_ANIM_MAX; i++) {
+        a = &wt->anim[i];
+        if (a->changes && frames_rect_same_area(&a->box, box)) {
+            if (!frames_anim_seen(a) &&
+                now - a->last_ms > FRAMES_ANIM_GAP_MS) {
+                a->changes = 0;     /* it rested: start over */
+                a->box = *box;
+                a->first_ms = now;
+            }
+            frames_box_add(&has_box, &a->box, box->x, box->y,
+                           box->x + box->w, box->y + box->h);
+            if (frames_rect_area(&a->box) > max_area) {
+                a->changes = 0;     /* it wanders: not an animation */
+                a->last_ms = 0;
+                return;
+            }
+            a->changes++;
+            a->last_ms = now;
+            return;
+        }
+        if (a->last_ms < oldest->last_ms) {
+            oldest = a;
+        }
+    }
+    if (frames_rect_area(box) <= max_area) {
+        oldest->box = *box;
+        oldest->changes = 1;
+        oldest->first_ms = oldest->last_ms = now;
+    }
+}
+
 /*
  * Count the changed pixels (@mask covers @ox, @oy, @w x @h) that
  * @wt cares about, and record the change if there are enough.
  */
 static void frames_offer_change(QemuFramesWaiter *wt, const uint8_t *mask,
                                 int ox, int oy, int w, int h, bool blink,
-                                int64_t now)
+                                int64_t now, int64_t max_area)
 {
     const QemuFramesCond *c = wt->cond;
+    QemuFramesRect anim[QEMU_FRAMES_ANIM_MAX];
     int x0 = INT_MAX, y0 = INT_MAX, x1 = -1, y1 = -1;
-    int count = 0;
+    int sx0 = INT_MAX, sy0 = INT_MAX, sx1 = -1, sy1 = -1;
+    int count = 0, seen = 0, n_anim = 0;
     int x, y, i;
 
     if (blink && c->ignore_blink) {
         return;
+    }
+    if (c->ignore_animation) {
+        for (i = 0; i < QEMU_FRAMES_ANIM_MAX; i++) {
+            if (frames_anim_seen(&wt->anim[i])) {
+                anim[n_anim++] = wt->anim[i].box;
+            }
+        }
     }
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
@@ -224,12 +348,29 @@ static void frames_offer_change(QemuFramesWaiter *wt, const uint8_t *mask,
             if (skip) {
                 continue;
             }
+            seen++;
+            sx0 = MIN(sx0, ox + x);
+            sy0 = MIN(sy0, oy + y);
+            sx1 = MAX(sx1, ox + x + 1);
+            sy1 = MAX(sy1, oy + y + 1);
+            for (i = 0; i < n_anim && !skip; i++) {
+                skip = frames_rect_contains(&anim[i], ox + x, oy + y);
+            }
+            if (skip) {
+                continue;
+            }
             count++;
             x0 = MIN(x0, ox + x);
             y0 = MIN(y0, oy + y);
             x1 = MAX(x1, ox + x + 1);
             y1 = MAX(y1, oy + y + 1);
         }
+    }
+    /* learn animations from what this wait can see */
+    if (!blink && seen >= MAX(1, c->min_pixels)) {
+        QemuFramesRect sbox = { sx0, sy0, sx1 - sx0, sy1 - sy0 };
+
+        frames_anim_feed(wt, &sbox, now, max_area);
     }
     if (count < MAX(1, c->min_pixels)) {
         return;
@@ -276,7 +417,8 @@ static void frames_compare(QemuFrames *f)
     int bx0 = INT_MAX, by0 = INT_MAX, bx1 = -1, by1 = -1;
     int count = 0;
     bool blink = false;
-    int64_t now;
+    QemuFramesRect box;
+    int64_t now, max_area;
 
     if (!surface || !f->prev || f->dx1 <= f->dx0) {
         f->dx0 = f->dx1 = 0;
@@ -323,9 +465,8 @@ static void frames_compare(QemuFrames *f)
     }
 
     now = frames_now_ms();
-    if (bx1 - bx0 <= FRAMES_BLINK_MAX_W && by1 - by0 <= FRAMES_BLINK_MAX_H) {
-        QemuFramesRect box = { x0 + bx0, y0 + by0, bx1 - bx0, by1 - by0 };
-
+    box = (QemuFramesRect) { x0 + bx0, y0 + by0, bx1 - bx0, by1 - by0 };
+    if (box.w <= FRAMES_BLINK_MAX_W && box.h <= FRAMES_BLINK_MAX_H) {
         blink = frames_is_blink(f, &box, frames_hash(f->prev, 0, 0, &box),
                                 frames_hash(cur, x0, y0, &box), now);
     }
@@ -333,8 +474,7 @@ static void frames_compare(QemuFrames *f)
     {
         QemuFramesUndo *u = g_new0(QemuFramesUndo, 1);
 
-        u->box = (QemuFramesRect) { x0 + bx0, y0 + by0,
-                                    bx1 - bx0, by1 - by0 };
+        u->box = box;
         u->pixels = count;
         u->blink = blink;
         u->old = pixman_image_create_bits(PIXMAN_x8r8g8b8, u->box.w,
@@ -349,11 +489,11 @@ static void frames_compare(QemuFrames *f)
     f->frame++;
     f->frame_ms = now;
     trace_frames_change(qemu_console_get_index(f->con), f->frame,
-                        x0 + bx0, y0 + by0, bx1 - bx0, by1 - by0,
-                        count, blink);
+                        box.x, box.y, box.w, box.h, count, blink);
 
+    max_area = frames_anim_max_area(f);
     QLIST_FOREACH(wt, &f->waiters, node) {
-        frames_offer_change(wt, mask, x0, y0, w, h, blink, now);
+        frames_offer_change(wt, mask, x0, y0, w, h, blink, now, max_area);
         qemu_co_sleep_wake(wt->cond->sleep);
     }
 }
@@ -556,11 +696,33 @@ QemuFramesWaiter *qemu_frames_wait_begin(QemuFrames *f,
                                          const QemuFramesCond *c)
 {
     QemuFramesWaiter *wt = g_new0(QemuFramesWaiter, 1);
+    int64_t max_area = frames_anim_max_area(f);
+    QemuFramesUndo *u;
 
     wt->cond = c;
     wt->begin_ms = frames_now_ms();
     wt->first_ms = -1;
     wt->last_ms = -1;
+    /* an animation that runs already is known from the start */
+    QTAILQ_FOREACH(u, &f->history, node) {
+        QemuFramesRect box = u->box;
+        bool ignored = false;
+        int i;
+
+        if (u->blink || u->whole || u->pixels < MAX(1, c->min_pixels) ||
+            wt->begin_ms - u->ended_ms > FRAMES_ANIM_LOOKBACK_MS) {
+            continue;
+        }
+        if (c->has_region && !frames_rect_clip(&box, &c->region)) {
+            continue;
+        }
+        for (i = 0; i < c->n_ignore && !ignored; i++) {
+            ignored = frames_rect_inside(&box, &c->ignore[i]);
+        }
+        if (!ignored) {
+            frames_anim_feed(wt, &box, u->ended_ms, max_area);
+        }
+    }
     QLIST_INSERT_HEAD(&f->waiters, wt, node);
     frames_set_interval(f);
     return wt;
@@ -573,6 +735,7 @@ void coroutine_fn qemu_frames_co_wait_finish(QemuFrames *f,
     const QemuFramesCond *c = wt->cond;
     int64_t start = frames_now_ms();
     int64_t now, deadline;
+    int i;
 
     memset(r, 0, sizeof(*r));
     for (;;) {
@@ -622,6 +785,12 @@ void coroutine_fn qemu_frames_co_wait_finish(QemuFrames *f,
     r->has_box = wt->has_box;
     r->box = wt->box;
     r->frame = f->frame;
+    for (i = 0; i < QEMU_FRAMES_ANIM_MAX; i++) {
+        if (frames_anim_seen(&wt->anim[i]) &&
+            wt->anim[i].last_ms >= wt->begin_ms) {
+            r->animations[r->n_animations++] = wt->anim[i].box;
+        }
+    }
     g_free(wt);
 }
 

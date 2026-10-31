@@ -291,6 +291,7 @@ McpResult *coroutine_fn qmp_screenshot(QObject *console, bool has_head,
 static McpWaitInfo *mcp_wait_info(const QemuFramesResult *r)
 {
     McpWaitInfo *w = g_new0(McpWaitInfo, 1);
+    int i;
 
     w->matched = r->matched;
     w->elapsed_ms = r->elapsed_ms;
@@ -309,12 +310,28 @@ static McpWaitInfo *mcp_wait_info(const QemuFramesResult *r)
         w->box->h = r->box.h;
     }
     w->frame = r->frame;
+    for (i = r->n_animations - 1; i >= 0; i--) {
+        ScreenRegion *a = g_new0(ScreenRegion, 1);
+
+        a->x = r->animations[i].x;
+        a->y = r->animations[i].y;
+        a->w = r->animations[i].w;
+        a->h = r->animations[i].h;
+        QAPI_LIST_PREPEND(w->animations, a);
+        w->has_animations = true;
+    }
     return w;
 }
 
 static void mcp_wait_summary(GString *s, QemuFramesUntil until,
+                             bool ignore_animation,
                              const QemuFramesResult *r)
 {
+    if (r->n_animations && ignore_animation) {
+        g_string_append_printf(s, "ignoring %d animated area%s; ",
+                               r->n_animations,
+                               r->n_animations > 1 ? "s" : "");
+    }
     if (r->matched) {
         switch (until) {
         case QEMU_FRAMES_CHANGE:
@@ -360,7 +377,14 @@ static void mcp_wait_summary(GString *s, QemuFramesUntil until,
     case QEMU_FRAMES_PIXEL:
         g_string_append_printf(s, "pixel did not match within %" PRId64
                                " ms", r->elapsed_ms);
-        break;
+        return;
+    }
+    if (r->n_animations && !ignore_animation) {
+        const QemuFramesRect *a = &r->animations[0];
+
+        g_string_append_printf(s, "; %d,%d %dx%d keeps changing on its own "
+                               "(a clock or a graph?): ignore-animation "
+                               "would skip it", a->x, a->y, a->w, a->h);
     }
 }
 
@@ -416,6 +440,8 @@ McpWaitResult *coroutine_fn qmp_wait_screen(McpWaitUntil until,
                                             McpPixel *pixel,
                                             bool has_ignore_blink,
                                             bool ignore_blink,
+                                            bool has_ignore_animation,
+                                            bool ignore_animation,
                                             McpScreenshotChoice *screenshot,
                                             Error **errp)
 {
@@ -452,6 +478,7 @@ McpWaitResult *coroutine_fn qmp_wait_screen(McpWaitUntil until,
     c.stable_ms = has_stable_ms ? stable_ms : 2000;
     c.timeout_ms = MIN(has_timeout_ms ? timeout_ms : 60000, MCP_WAIT_MAX_MS);
     c.ignore_blink = has_ignore_blink ? ignore_blink : true;
+    c.ignore_animation = has_ignore_animation && ignore_animation;
     c.sleep = &ctx->sleep;
     c.cancelled = &ctx->cancelled;
     if (c.until == QEMU_FRAMES_PIXEL) {
@@ -480,7 +507,7 @@ McpWaitResult *coroutine_fn qmp_wait_screen(McpWaitUntil until,
 
     res = g_new0(McpWaitResult, 1);
     res->wait = mcp_wait_info(&r);
-    mcp_wait_summary(summary, c.until, &r);
+    mcp_wait_summary(summary, c.until, c.ignore_animation, &r);
     if (mcp_screenshot_wanted(screenshot, true, &shot_region, &shot_scale)) {
         McpImage *mi = mcp_co_image(con, shot_region, shot_scale, false,
                                     errp);
@@ -539,6 +566,8 @@ static bool mcp_input_begin(McpInput *in, QemuConsole *con, McpThen *then,
                                                        : 10000,
                                   MCP_WAIT_MAX_MS);
         in->cond.ignore_blink = true;
+        in->cond.ignore_animation = then->has_ignore_animation &&
+                                    then->ignore_animation;
         in->cond.sleep = &ctx->sleep;
         in->cond.cancelled = &ctx->cancelled;
         in->wt = qemu_frames_wait_begin(in->frames, &in->cond);
@@ -580,7 +609,8 @@ static bool coroutine_fn mcp_co_input_finish(McpInput *in,
         }
         res->wait = mcp_wait_info(&r);
         g_string_append(summary, "; ");
-        mcp_wait_summary(summary, in->cond.until, &r);
+        mcp_wait_summary(summary, in->cond.until, in->cond.ignore_animation,
+                         &r);
     }
     if (then && mcp_screenshot_wanted(then->screenshot, false,
                                       &region, &scale)) {
