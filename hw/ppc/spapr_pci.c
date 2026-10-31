@@ -434,6 +434,7 @@ static void rtas_ibm_query_interrupt_source_number(PowerPCCPU *cpu,
     uint32_t config_addr = rtas_ld(args, 0);
     uint64_t buid = rtas_ldq(args, 1);
     unsigned int intr_src_num = -1, ioa_intr_num = rtas_ld(args, 3);
+    unsigned int trigger;
     SpaprPhbState *phb = NULL;
     PCIDevice *pdev = NULL;
     SpaprPciMsi *msi;
@@ -450,18 +451,39 @@ static void rtas_ibm_query_interrupt_source_number(PowerPCCPU *cpu,
 
     /* Find device descriptor and start IRQ */
     msi = (SpaprPciMsi *) g_hash_table_lookup(phb->msi, &config_addr);
-    if (!msi || !msi->first_irq || !msi->num || (ioa_intr_num >= msi->num)) {
-        trace_spapr_pci_msi("Failed to return vector", config_addr);
-        rtas_st(rets, 0, RTAS_OUT_HW_ERROR);
-        return;
+    if (msi && msi->first_irq && msi->num) {
+        if (ioa_intr_num >= msi->num) {
+            rtas_st(rets, 0, 1); /* no interrupt assigned */
+            return;
+        }
+        intr_src_num = msi->first_irq + ioa_intr_num;
+        trigger = 1; /* edge */
+    } else {
+        /*
+         * Without MSIs the function signals its INTx pin. LoPAR says the
+         * call reports that LSI too, and AIX gets its PCI interrupts
+         * only this way.
+         */
+        PCIINTxRoute route;
+
+        if (pci_intx(pdev) < 0 || ioa_intr_num) {
+            rtas_st(rets, 0, 1); /* no interrupt assigned */
+            return;
+        }
+        route = pci_device_route_intx_to_irq(pdev, pci_intx(pdev));
+        if (route.mode != PCI_INTX_ENABLED) {
+            rtas_st(rets, 0, RTAS_OUT_HW_ERROR);
+            return;
+        }
+        intr_src_num = route.irq;
+        trigger = 0; /* level */
     }
-    intr_src_num = msi->first_irq + ioa_intr_num;
     trace_spapr_pci_rtas_ibm_query_interrupt_source_number(ioa_intr_num,
                                                            intr_src_num);
 
     rtas_st(rets, 0, RTAS_OUT_SUCCESS);
     rtas_st(rets, 1, intr_src_num);
-    rtas_st(rets, 2, 1);/* 0 == level; 1 == edge */
+    rtas_st(rets, 2, trigger);
 }
 
 static void rtas_ibm_set_eeh_option(PowerPCCPU *cpu,
