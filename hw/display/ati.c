@@ -62,6 +62,16 @@ static void ati_vga_set_offset(VGACommonState *vga, uint32_t offs)
     vga->vbe_start_addr = offs / 4;
 }
 
+static bool ati_big_endian_fb(ATIVGAState *s)
+{
+    /* Radeon has the frame buffer aperture swap controls in SURFACE_CNTL */
+    return s->regs.config_cntl & (APER_0_ENDIAN | APER_1_ENDIAN) ||
+           s->regs.surface_cntl & (NONSURF_AP0_SWP_16BPP |
+                                   NONSURF_AP0_SWP_32BPP |
+                                   NONSURF_AP1_SWP_16BPP |
+                                   NONSURF_AP1_SWP_32BPP);
+}
+
 static void ati_vga_switch_mode(ATIVGAState *s)
 {
     DPRINTF("%d -> %d\n",
@@ -111,9 +121,7 @@ static void ati_vga_switch_mode(ATIVGAState *s)
             DPRINTF("Switching to %dx%d %d %d @ %x\n", h, v, stride, bpp, offs);
             vbe_ioport_write_index(&s->vga, 0, VBE_DISPI_INDEX_ENABLE);
             vbe_ioport_write_data(&s->vga, 0, VBE_DISPI_DISABLED);
-            s->vga.big_endian_fb = (s->regs.config_cntl & APER_0_ENDIAN ||
-                                    s->regs.config_cntl & APER_1_ENDIAN ?
-                                    true : false);
+            s->vga.big_endian_fb = ati_big_endian_fb(s);
             /* reset VBE regs then set up mode */
             s->vga.vbe_regs[VBE_DISPI_INDEX_XRES] = h;
             s->vga.vbe_regs[VBE_DISPI_INDEX_YRES] = v;
@@ -356,6 +364,9 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
         break;
     case CNFG_MEMSIZE:
         val = s->vga.vram_size;
+        break;
+    case SURFACE_CNTL:
+        val = s->regs.surface_cntl;
         break;
     case CONFIG_APER_0_BASE:
     case CONFIG_APER_1_BASE:
@@ -734,6 +745,14 @@ static void ati_mm_write(void *opaque, hwaddr addr,
         break;
     case CNFG_CNTL:
         s->regs.config_cntl = data;
+        break;
+    case SURFACE_CNTL:
+        if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF) {
+            s->regs.surface_cntl = data;
+            if (s->mode == EXT_MODE) {
+                s->vga.big_endian_fb = ati_big_endian_fb(s);
+            }
+        }
         break;
     case CRTC_H_TOTAL_DISP:
         s->regs.crtc_h_total_disp = data & 0x07ff07ff;
@@ -1241,6 +1260,7 @@ static void ati_vga_reset(DeviceState *dev)
     s->host_data.col = 0;
     s->regs.rbbm_guicntl = 0;
     s->regs.config_cntl = 0;
+    s->regs.surface_cntl = 0;
 }
 
 static void ati_vga_exit(PCIDevice *dev)

@@ -166,6 +166,7 @@
 #define PM4_MICRO_CNTL                          0x07fc
 #define CAP0_TRIG_CNTL                          0x0950
 #define CAP1_TRIG_CNTL                          0x09c0
+#define SURFACE_CNTL                            0x0b00
 
 #define RBBM_STATUS                             0x0e40
 
@@ -391,6 +392,12 @@
 
 #define BUS_MASTER_DIS                          0x00000040
 #define PM4_BUFFER_CNTL_NONPM4                  0x00000000
+
+/* SURFACE_CNTL bit constants */
+#define NONSURF_AP0_SWP_16BPP                   0x00100000
+#define NONSURF_AP0_SWP_32BPP                   0x00200000
+#define NONSURF_AP1_SWP_16BPP                   0x00400000
+#define NONSURF_AP1_SWP_32BPP                   0x00800000
 
 /* RBBM_GUICNTL bit constants */
 #define HOST_DATA_SWAP_MASK                     0x00000003
