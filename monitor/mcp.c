@@ -78,7 +78,8 @@ typedef struct McpCall {
 
 typedef struct McpEvent {
     char *name;
-    int64_t ms;
+    int64_t ms;                 /* the newest one, if repeated */
+    int count;
 } McpEvent;
 
 struct MonitorMCP {
@@ -170,15 +171,25 @@ static void monitor_mcp_emit_event(Monitor *mon, QAPIEvent event,
                                    QDict *qdict)
 {
     MonitorMCP *mcp = MONITOR_MCP(mon);
+    const char *name = QAPIEvent_str(event);
 
+    /* a guest that sets its clock every second sends a stream of these */
+    if (mcp->n_events &&
+        !strcmp(mcp->events[mcp->n_events - 1].name, name)) {
+        mcp->events[mcp->n_events - 1].count++;
+        mcp->events[mcp->n_events - 1].ms =
+            qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        return;
+    }
     if (mcp->n_events == MCP_EVENTS_MAX) {
         g_free(mcp->events[0].name);
         memmove(&mcp->events[0], &mcp->events[1],
                 sizeof(mcp->events[0]) * (MCP_EVENTS_MAX - 1));
         mcp->n_events--;
     }
-    mcp->events[mcp->n_events].name = g_strdup(QAPIEvent_str(event));
+    mcp->events[mcp->n_events].name = g_strdup(name);
     mcp->events[mcp->n_events].ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    mcp->events[mcp->n_events].count = 1;
     mcp->n_events++;
 }
 
@@ -198,6 +209,9 @@ static QList *mcp_take_events(MonitorMCP *mcp)
 
         qdict_put_str(e, "event", mcp->events[i].name);
         qdict_put_int(e, "ms-ago", now - mcp->events[i].ms);
+        if (mcp->events[i].count > 1) {
+            qdict_put_int(e, "count", mcp->events[i].count);
+        }
         qlist_append(list, e);
         g_free(mcp->events[i].name);
     }
