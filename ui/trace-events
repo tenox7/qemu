@@ -210,3 +210,6 @@ dbus_can_share_map(bool share) "can_share_map: %d"
 
 # egl-helpers.c
 egl_init_d3d11_device(void *p) "d3d device: %p"
+
+# frames.c
+frames_change(int con, uint64_t frame, int x, int y, int w, int h, int pixels, bool blink) "con %d frame %" PRIu64 " box %d,%d %dx%d pixels %d blink %d"
