@@ -4638,6 +4638,10 @@ if have_tools
   if have_qemu_vnc
     subdir('tools/qemu-vnc')
   endif
+
+  if host_os != 'windows'
+    subdir('tools/lemu-mcp')
+  endif
 endif
 
 if stap.found()
