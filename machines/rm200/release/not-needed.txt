@@ -1,0 +1,23 @@
+# Features other builds have that the MIPS kits leave out on purpose.
+# check.sh does not count these as lost. Found by comparing with the user's
+# own SDL build in ~/VM/NT31MIPS/qemu and the Linux build of the first
+# nt31mips-qemu kit. PATTERN is a shell glob.
+#
+# KIND    PATTERN       # why
+device    vhost-*       # KVM and virtio back ends; NT and SINIX on MIPS have no virtio drivers
+device    virtio-9p-*   # 9p shared folders need virtio drivers in the guest
+device    usb-host      # host USB passthrough; the guests have no USB
+display   curses        # text-mode window; the guests run in graphics mode
+display   dbus          # D-Bus display; needs a D-Bus client on the host
+chardev   dbus          # part of the D-Bus display
+audio     dbus          # part of the D-Bus display
+chardev   qemu-vdagent  # SPICE agent clipboard; no agent for these guests
+audio     oss           # old Linux sound, only tried when PulseAudio is missing; alsa is in
+audio     sndio         # OpenBSD sound
+format    ftp*          # disk images over FTP (curl); the kits use local files
+format    http*         # disk images over HTTP (curl); the kits use local files
+format    ssh           # disk images over SSH (libssh); the kits use local files
+format    replication   # COLO fault tolerance
+netdev    l2tpv3        # L2TPv3 tunnels; the kits use -nic user
+netdev    passt         # needs the passt program on the host; the kits use -nic user
+netdev    vhost-vdpa    # KVM and virtio

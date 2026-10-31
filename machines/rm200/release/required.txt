@@ -1,0 +1,24 @@
+# What every MIPS kit build must have. check.sh fails the build if one is
+# missing. WHERE is all, a platform (macos, linux) or a binary name.
+# The Windows build is not run; build-windows.sh checks its configure
+# summary and version string instead.
+#
+# WHERE   KIND     NAME          # why
+all       version  git-id        # --version names the commit, so a bug report says which build
+all       monitor  hmp           # run.sh uses -monitor stdio
+all       display  sdl           # the NT 3.1 front panel LED gets its own window (Cocoa shows one screen at a time)
+macos     display  cocoa         # the native Mac window, -display cocoa
+all       accel    tcg           # the only accelerator for MIPS guests
+all       netdev   user          # run.sh uses -nic user
+macos     netdev   vmnet-shared  # Mac networking without slirp, as in the earlier kits
+macos     audio    coreaudio     # sound on the Mac
+linux     audio    pa            # the default sound on Linux; without it the PC speaker is silent
+linux     audio    alsa          # sound on Linux hosts without PulseAudio
+all       format   qcow2         # NT 3.1 disk
+all       format   raw           # NT 4.0 and SINIX disks
+all       machine  magnum        # NT 3.1 kit
+all       machine  sni-rm200     # NT 4.0 and SINIX kits
+all       machine  sni-rm300     # NT 4.0 Server 4-CPU kit
+all       device   scsi-hd       # the kit disks
+all       device   scsi-cd       # NT 4.0 Server kit CD-ROM
+all       device   pcnet         # -nic model=pcnet in the RM200 kits
