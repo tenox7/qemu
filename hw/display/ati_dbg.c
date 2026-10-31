@@ -52,6 +52,7 @@ static struct ati_regdesc ati_reg_names[] = {
     {"PCI_GART_PAGE", 0x017c},
     {"PC_NGUI_MODE", 0x0180},
     {"PC_NGUI_CTLSTAT", 0x0184},
+    {"GPIOPAD_Y", 0x01a4},
     {"MPP_TB_CONFIG", 0x01C0},
     {"MPP_GP_CONFIG", 0x01C8},
     {"VIPH_CONTROL", 0x01D0},

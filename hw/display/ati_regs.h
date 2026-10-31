@@ -70,6 +70,7 @@
 #define PCI_GART_PAGE                           0x017c
 #define PC_NGUI_MODE                            0x0180
 #define PC_NGUI_CTLSTAT                         0x0184
+#define GPIOPAD_Y                               0x01a4
 #define MPP_TB_CONFIG                           0x01C0
 #define MPP_GP_CONFIG                           0x01C8
 #define VIPH_CONTROL                            0x01D0

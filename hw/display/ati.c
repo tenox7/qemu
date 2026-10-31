@@ -383,6 +383,12 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
             val = BIT(28) | BIT(20);
         }
         break;
+    case GPIOPAD_Y:
+        if (s->dev_id == PCI_DEVICE_ID_ATI_RADEON_ES1000) {
+            /* the AIX driver allows X11 only if this pad reads high */
+            val = BIT(15);
+        }
+        break;
     case RBBM_STATUS:
     case GUI_STAT:
         val = 64; /* free CMDFIFO entries */
