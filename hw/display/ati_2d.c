@@ -68,6 +68,8 @@ typedef struct {
     QemuRect src;
     int src_stride;
     const uint8_t *src_bits;
+    /* for a one line source: 0 marks transparent pixels */
+    const uint8_t *src_mask;
 } ATI2DCtx;
 
 static void ati_set_dirty(const ATI2DCtx *ctx)
@@ -140,6 +142,7 @@ static void setup_2d_blt_ctx(ATIVGAState *s, ATI2DCtx *ctx)
                  s->regs.src_y : s->regs.src_y + 1 - ctx->dst.height);
     ctx->src_stride = s->regs.src_pitch;
     ctx->src_bits = s->vga.vram_ptr + s->regs.src_offset;
+    ctx->src_mask = NULL;
     if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
         ctx->src_stride *= ctx->bpp;
     }
@@ -262,6 +265,9 @@ static void rop_blt(const ATI2DCtx *ctx, const QemuRect *dst,
 
             x = ctx->left_to_right ? i : dst->width - 1 - i;
             if (use_src) {
+                if (ctx->src_mask && !ctx->src_mask[src->x + x]) {
+                    continue;
+                }
                 sp = ctx->src_bits + (src->y + y) * ctx->src_stride +
                      (src->x + x) * bypp;
             }
@@ -333,7 +339,7 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
     pix_mask = (bypp == 4 ? UINT32_MAX : BIT(bypp * 8) - 1);
     mono_brush = (ctx->brush_type == BRUSH_8X8_MONO_FRGD_BKGD ||
                   ctx->brush_type == BRUSH_8X8_MONO_FRGD);
-    if ((ctx->write_mask & pix_mask) != pix_mask ||
+    if ((ctx->write_mask & pix_mask) != pix_mask || ctx->src_mask ||
         (ctx->rop3 == ROP3_PATCOPY && mono_brush) ||
         (ctx->rop3 != ROP3_SRCCOPY && ctx->rop3 != ROP3_PATCOPY &&
          ctx->rop3 != ROP3_BLACKNESS && ctx->rop3 != ROP3_WHITENESS)) {
@@ -491,6 +497,7 @@ bool ati_host_data_flush(ATIVGAState *s)
     ATI2DCtx ctx, chunk;
     unsigned bypp, pix_count, row, col, idx;
     uint8_t pix_buf[ATI_HOST_DATA_ACC_BITS * sizeof(uint32_t)];
+    uint8_t fg_mask[ATI_HOST_DATA_ACC_BITS];
     uint32_t src_source = s->regs.dp_mix & DP_SRC_SOURCE;
     uint32_t src_datatype = s->regs.dp_datatype & DP_SRC_DATATYPE;
 
@@ -552,6 +559,7 @@ bool ati_host_data_flush(ATIVGAState *s)
                 for (int i = 0; i < 8; i++) {
                     bool is_fg = byte_val & BIT(byte_pix_order ? i : 7 - i);
                     stn_he_p(&pix_buf[idx], bypp, is_fg ? fg : bg);
+                    fg_mask[idx / bypp] = is_fg;
                     idx += bypp;
                 }
             }
@@ -561,6 +569,10 @@ bool ati_host_data_flush(ATIVGAState *s)
     /* Copy and then modify blit ctx for use in a chunked blit */
     chunk = ctx;
     chunk.src_bits = pix_buf;
+    if (src_datatype == SRC_MONO_FRGD) {
+        /* the background is transparent */
+        chunk.src_mask = fg_mask;
+    }
     chunk.src.y = 0;
     chunk.src_stride = ATI_HOST_DATA_ACC_BITS * bypp;
 
