@@ -1071,9 +1071,53 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     }
 }
 
+/*
+ * With APER_REG_ENDIAN set the register aperture swaps the bytes of each
+ * 32-bit word, so a big endian host can use plain loads and stores (the
+ * AIX X server does).
+ */
+static uint64_t ati_mm_aper_read(void *opaque, hwaddr addr, unsigned int size)
+{
+    ATIVGAState *s = opaque;
+
+    if (!(s->regs.config_cntl & APER_REG_ENDIAN)) {
+        return ati_mm_read(s, addr, size);
+    }
+    switch (size) {
+    case 1:
+        return ati_mm_read(s, addr ^ 3, size);
+    case 2:
+        return bswap16(ati_mm_read(s, addr ^ 2, size));
+    default:
+        return bswap32(ati_mm_read(s, addr, size));
+    }
+}
+
+static void ati_mm_aper_write(void *opaque, hwaddr addr,
+                              uint64_t data, unsigned int size)
+{
+    ATIVGAState *s = opaque;
+
+    if (!(s->regs.config_cntl & APER_REG_ENDIAN)) {
+        ati_mm_write(s, addr, data, size);
+        return;
+    }
+    switch (size) {
+    case 1:
+        ati_mm_write(s, addr ^ 3, data, size);
+        break;
+    case 2:
+        ati_mm_write(s, addr ^ 2, bswap16(data), size);
+        break;
+    default:
+        ati_mm_write(s, addr, bswap32(data), size);
+        break;
+    }
+}
+
 static const MemoryRegionOps ati_mm_ops = {
-    .read = ati_mm_read,
-    .write = ati_mm_write,
+    .read = ati_mm_aper_read,
+    .write = ati_mm_aper_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
@@ -1196,6 +1240,7 @@ static void ati_vga_reset(DeviceState *dev)
     s->host_data.row = 0;
     s->host_data.col = 0;
     s->regs.rbbm_guicntl = 0;
+    s->regs.config_cntl = 0;
 }
 
 static void ati_vga_exit(PCIDevice *dev)
