@@ -103,6 +103,7 @@
 #include "fsdev/qemu-fsdev.h"
 #endif
 #include "system/qtest.h"
+#include "system/registry.h"
 #ifdef CONFIG_TCG
 #include "tcg/perf.h"
 #endif
@@ -200,6 +201,9 @@ static int default_audio = 1;
 static int default_serial = 1;
 static int default_parallel = 1;
 static int default_monitor = IS_ENABLED(CONFIG_HMP);
+static bool mcp_enabled = true;
+static bool mcp_explicit;
+static const char *mcp_argv0;
 static int default_floppy = 1;
 static int default_cdrom = 1;
 static bool auto_create_sdcard = true;
@@ -2120,6 +2124,17 @@ static void qemu_create_late_backends(void)
         exit(1);
     }
 
+    /* The default MCP socket and the registry entry */
+    if (mcp_enabled && !qtest_chrdev) {
+        Error *err = NULL;
+
+        lemu_registry_init(!mcp_explicit, mcp_argv0, &err);
+        if (err) {
+            error_prepend(&err, "MCP is off: ");
+            warn_report_err(err);
+        }
+    }
+
     qemu_opts_foreach(qemu_find_opts("mon"),
                       mon_init_func, NULL, &error_fatal);
 
@@ -2911,6 +2926,7 @@ void qemu_init(int argc, char **argv)
 
     error_init(argv[0]);
     qemu_init_exec_dir(argv[0]);
+    mcp_argv0 = argv[0];
 
     os_setup_limits();
 
@@ -3247,6 +3263,18 @@ void qemu_init(int argc, char **argv)
             case QEMU_OPTION_qmp:
                 monitor_parse(optarg, "control", false);
                 default_monitor = 0;
+                break;
+            case QEMU_OPTION_mcp:
+                if (!strcmp(optarg, "off")) {
+                    mcp_enabled = false;
+                } else if (!strcmp(optarg, "on")) {
+                    mcp_enabled = true;
+                } else {
+                    monitor_parse(optarg, "mcp", false);
+                    lemu_registry_add_endpoint(optarg);
+                    mcp_enabled = true;
+                    mcp_explicit = true;
+                }
                 break;
             case QEMU_OPTION_qmp_pretty:
                 monitor_parse(optarg, "control", true);

@@ -4997,6 +4997,23 @@ SRST
     Like ``-qmp`` but uses pretty JSON formatting.
 ERST
 
+DEF("mcp", HAS_ARG, QEMU_OPTION_mcp, \
+    "-mcp on|off|dev  MCP server for AI agents (default: on)\n",
+    QEMU_ARCH_ALL)
+SRST
+``-mcp on|off|dev``
+    Offer the Model Context Protocol (MCP) to AI agents, so they can
+    look at the screen and drive the keyboard and mouse.  By default
+    lemu opens ``/tmp/lemu-$UID/<pid>.sock`` and describes the VM in
+    ``/tmp/lemu-$UID/<pid>.json``; the directory is only open to the
+    user.  ``-mcp off`` turns this off.  ``-mcp dev`` uses the given
+    character device instead of the default socket, for example::
+
+        -mcp unix:vm.mcp,server=on,wait=off
+
+    MCP is off under ``-qtest``.
+ERST
+
 DEF("mon", HAS_ARG, QEMU_OPTION_mon, \
     "-mon [chardev=]name[,mode="
 #ifdef CONFIG_HMP
