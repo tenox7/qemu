@@ -161,6 +161,24 @@
   'data': ['ppm', 'png'] }
 
 ##
+# @ScreenRegion:
+#     A rectangle in framebuffer pixels, origin top-left.
+#
+# @x: left edge
+#
+# @y: top edge
+#
+# @w: width
+#
+# @h: height
+#
+# Since: 11.2
+##
+{ 'struct': 'ScreenRegion',
+  'data': { 'x': 'int', 'y': 'int', 'w': 'int', 'h': 'int' },
+  'if': 'CONFIG_PIXMAN' }
+
+##
 # @screendump:
 #     Capture the contents of a screen and write it to a file.
 #
@@ -177,6 +195,11 @@
 #
 # @format: image format for `screendump`.  (default: ppm) (Since 7.1)
 #
+# @region: save only this rectangle of the screen.  (Since 11.2)
+#
+# @scale: scale the image by this factor, from 0.1 to 2.0.  It is
+#     applied after @region.  (default: 1.0) (Since 11.2)
+#
 # Since: 0.14
 #
 # .. qmp-example::
@@ -187,7 +210,8 @@
 ##
 { 'command': 'screendump',
   'data': {'filename': 'str', '*device': 'str', '*head': 'int',
-           '*format': 'ImageFormat'},
+           '*format': 'ImageFormat', '*region': 'ScreenRegion',
+           '*scale': 'number'},
   'coroutine': true,
   'if': 'CONFIG_PIXMAN' }
 

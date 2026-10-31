@@ -94,6 +94,8 @@ pixman_image_t *qemu_pixman_linebuf_create(pixman_format_code_t format,
                                            int width);
 void qemu_pixman_linebuf_fill(pixman_image_t *linebuf, pixman_image_t *fb,
                               int width, int x, int y);
+pixman_image_t *qemu_pixman_crop_scale(pixman_image_t *src, int x, int y,
+                                       int w, int h, double scale);
 pixman_image_t *qemu_pixman_mirror_create(pixman_format_code_t format,
                                           pixman_image_t *image);
 

@@ -53,6 +53,7 @@ libui = static_library('qemuui', libui_sources + genh,
   build_by_default: false)
 ui = declare_dependency(objects: libui.extract_all_objects(recursive: false), dependencies: [pixman])
 system_ss.add(png)
+system_ss.add(when: pixman, if_true: [files('png.c'), zlib])
 system_ss.add(files(
   'input-barrier.c',
   'input.c',

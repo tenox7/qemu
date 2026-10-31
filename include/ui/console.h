@@ -384,6 +384,11 @@ void qemu_console_set_window_id(QemuConsole *con, int window_id);
 void qemu_console_resize(QemuConsole *con, int width, int height);
 DisplaySurface *qemu_console_surface(QemuConsole *con);
 void coroutine_fn qemu_console_co_wait_update(QemuConsole *con);
+#ifdef CONFIG_PIXMAN
+pixman_image_t *coroutine_fn
+qemu_console_co_capture(QemuConsole *con, const ScreenRegion *region,
+                        double scale, Error **errp);
+#endif
 
 /* console-gl.c */
 #ifdef CONFIG_OPENGL

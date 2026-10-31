@@ -471,7 +471,7 @@ hmp_screendump(MonitorHMP *hmp, const QDict *qdict)
     }
 
     qmp_screendump(filename, id, id != NULL, head,
-                   input_format != NULL, format, &err);
+                   input_format != NULL, format, NULL, false, 0, &err);
 end:
     hmp_handle_error(hmp, err);
 }

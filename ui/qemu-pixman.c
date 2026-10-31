@@ -216,6 +216,46 @@ pixman_image_t *qemu_pixman_mirror_create(pixman_format_code_t format,
                                     NULL,
                                     pixman_image_get_stride(image));
 }
+
+/*
+ * Copy the rectangle @x, @y, @w, @h of @src into a new x8r8g8b8 image,
+ * scaled by @scale.  The rectangle must lie inside @src.
+ */
+pixman_image_t *qemu_pixman_crop_scale(pixman_image_t *src, int x, int y,
+                                       int w, int h, double scale)
+{
+    int ow = MAX(1, (int)(w * scale + 0.5));
+    int oh = MAX(1, (int)(h * scale + 0.5));
+    pixman_image_t *dst = pixman_image_create_bits(PIXMAN_x8r8g8b8,
+                                                   ow, oh, NULL, 0);
+    pixman_image_t *view;
+    pixman_transform_t t;
+
+    assert(dst != NULL);
+    if (ow == w && oh == h) {
+        pixman_image_composite(PIXMAN_OP_SRC, src, NULL, dst,
+                               x, y, 0, 0, 0, 0, w, h);
+        return dst;
+    }
+
+    /* destination pixel p samples the source at p * w / ow + (x, y) */
+    pixman_transform_init_scale(&t, pixman_double_to_fixed((double)w / ow),
+                                pixman_double_to_fixed((double)h / oh));
+    pixman_transform_translate(&t, NULL, pixman_int_to_fixed(x),
+                               pixman_int_to_fixed(y));
+    /* a private view of the pixels, so @src itself is not changed */
+    view = pixman_image_create_bits(pixman_image_get_format(src),
+                                    pixman_image_get_width(src),
+                                    pixman_image_get_height(src),
+                                    pixman_image_get_data(src),
+                                    pixman_image_get_stride(src));
+    pixman_image_set_transform(view, &t);
+    pixman_image_set_filter(view, PIXMAN_FILTER_GOOD, NULL, 0);
+    pixman_image_composite(PIXMAN_OP_SRC, view, NULL, dst,
+                           0, 0, 0, 0, 0, 0, ow, oh);
+    pixman_image_unref(view);
+    return dst;
+}
 #endif
 
 void qemu_pixman_image_unref(pixman_image_t *image)

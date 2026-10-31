@@ -25,9 +25,7 @@
 #include "ui/console.h"
 #include "ui/dbus-display.h"
 #include "ui/qemu-spice.h"
-#ifdef CONFIG_PNG
-#include <png.h>
-#endif
+#include "ui/png.h"
 
 void qmp_set_password(SetPasswordOptions *opts, Error **errp)
 {
@@ -207,87 +205,17 @@ void qmp_client_migrate_info(const char *protocol, const char *hostname,
 }
 
 #ifdef CONFIG_PIXMAN
-#ifdef CONFIG_PNG
-/**
- * png_save: Take a screenshot as PNG
- *
- * Saves screendump as a PNG file
- *
- * Returns true for success or false for error.
- *
- * @fd: File descriptor for PNG file.
- * @image: Image data in pixman format.
- * @errp: Pointer to an error.
- */
 static bool png_save(int fd, pixman_image_t *image, Error **errp)
 {
-    int width = pixman_image_get_width(image);
-    int height = pixman_image_get_height(image);
-    png_struct *png_ptr;
-    png_info *info_ptr;
-    g_autoptr(pixman_image_t) linebuf =
-        qemu_pixman_linebuf_create(PIXMAN_BE_r8g8b8, width);
-    uint8_t *buf = (uint8_t *)pixman_image_get_data(linebuf);
-    FILE *f = fdopen(fd, "wb");
-    int y;
-    if (!f) {
-        error_setg_errno(errp, errno,
-                         "Failed to create file from file descriptor");
+    g_autoptr(Object) ioc = OBJECT(qio_channel_file_new_fd(fd));
+    g_autoptr(GByteArray) png = qemu_png_encode(image, errp);
+
+    if (!png) {
         return false;
     }
-
-    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL,
-                                      NULL, NULL);
-    if (!png_ptr) {
-        error_setg(errp, "PNG creation failed. Unable to write struct");
-        fclose(f);
-        return false;
-    }
-
-    info_ptr = png_create_info_struct(png_ptr);
-
-    if (!info_ptr) {
-        error_setg(errp, "PNG creation failed. Unable to write info");
-        fclose(f);
-        png_destroy_write_struct(&png_ptr, &info_ptr);
-        return false;
-    }
-
-    png_init_io(png_ptr, f);
-
-    png_set_IHDR(png_ptr, info_ptr, width, height, 8,
-                 PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-
-    png_write_info(png_ptr, info_ptr);
-
-    for (y = 0; y < height; ++y) {
-        qemu_pixman_linebuf_fill(linebuf, image, width, 0, y);
-        png_write_row(png_ptr, buf);
-    }
-
-    png_write_end(png_ptr, NULL);
-
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-
-    if (fclose(f) != 0) {
-        error_setg_errno(errp, errno,
-                         "PNG creation failed. Unable to close file");
-        return false;
-    }
-
-    return true;
+    return qio_channel_write_all(QIO_CHANNEL(ioc), (char *)png->data,
+                                 png->len, errp) == 0;
 }
-
-#else /* no png support */
-
-static bool png_save(int fd, pixman_image_t *image, Error **errp)
-{
-    error_setg(errp, "Enable PNG support with libpng for screendump");
-    return false;
-}
-
-#endif /* CONFIG_PNG */
 
 static bool ppm_save(int fd, pixman_image_t *image, Error **errp)
 {
@@ -319,15 +247,77 @@ static bool ppm_save(int fd, pixman_image_t *image, Error **errp)
     return true;
 }
 
+/*
+ * Take a fresh image of @con, cropped to @region (NULL: the whole
+ * screen) and scaled by @scale.  The result is a new image.
+ *
+ * Safety: coroutine-only, concurrent-coroutine safe, main thread only
+ */
+pixman_image_t *coroutine_fn
+qemu_console_co_capture(QemuConsole *con, const ScreenRegion *region,
+                        double scale, Error **errp)
+{
+    g_autoptr(pixman_image_t) image = NULL;
+    DisplaySurface *surface;
+    int x = 0, y = 0, w, h;
+
+    if (scale < 0.1 || scale > 2.0) {
+        error_setg(errp, "scale %g is out of range; use 0.1 to 2.0", scale);
+        return NULL;
+    }
+
+    object_ref(con);
+    qemu_console_co_wait_update(con);
+
+    /*
+     * All pending coroutines are woken up, while the BQL is held.  No
+     * further graphic update are possible until it is released.  Take
+     * an image ref before that.
+     */
+    surface = qemu_console_surface(con);
+    if (!surface) {
+        error_setg(errp, "no surface");
+        object_unref(con);
+        return NULL;
+    }
+    image = pixman_image_ref(surface->image);
+    object_unref(con);
+
+    w = pixman_image_get_width(image);
+    h = pixman_image_get_height(image);
+    if (region) {
+        if (region->x < 0 || region->y < 0 || region->w <= 0 ||
+            region->h <= 0 || region->x + region->w > w ||
+            region->y + region->h > h) {
+            error_setg(errp, "region %" PRId64 ",%" PRId64 " %" PRId64
+                       "x%" PRId64 " is outside the %dx%d screen",
+                       region->x, region->y, region->w, region->h, w, h);
+            return NULL;
+        }
+        x = region->x;
+        y = region->y;
+        w = region->w;
+        h = region->h;
+    }
+
+    /*
+     * The image content could potentially be updated as the coroutine
+     * yields and releases the BQL. It could produce corrupted dump, but
+     * it should be otherwise safe.
+     */
+    return qemu_pixman_crop_scale(image, x, y, w, h, scale);
+}
+
 /* Safety: coroutine-only, concurrent-coroutine safe, main thread only */
 void coroutine_fn
 qmp_screendump(const char *filename, const char *device,
                bool has_head, int64_t head,
-               bool has_format, ImageFormat format, Error **errp)
+               bool has_format, ImageFormat format,
+               ScreenRegion *region, bool has_scale, double scale,
+               Error **errp)
 {
     g_autoptr(pixman_image_t) image = NULL;
     QemuConsole *con;
-    DisplaySurface *surface;
     int fd;
 
     if (device) {
@@ -348,33 +338,17 @@ qmp_screendump(const char *filename, const char *device,
         }
     }
 
-    object_ref(con);
-    qemu_console_co_wait_update(con);
-
-    /*
-     * All pending coroutines are woken up, while the BQL is held.  No
-     * further graphic update are possible until it is released.  Take
-     * an image ref before that.
-     */
-    surface = qemu_console_surface(con);
-    if (!surface) {
-        error_setg(errp, "no surface");
-        object_unref(con);
+    image = qemu_console_co_capture(con, region, has_scale ? scale : 1.0,
+                                    errp);
+    if (!image) {
         return;
     }
-    image = pixman_image_ref(surface->image);
-    object_unref(con);
 
     fd = qemu_create(filename, O_WRONLY | O_TRUNC | O_BINARY, 0666, errp);
     if (fd == -1) {
         return;
     }
 
-    /*
-     * The image content could potentially be updated as the coroutine
-     * yields and releases the BQL. It could produce corrupted dump, but
-     * it should be otherwise safe.
-     */
     if (has_format && format == IMAGE_FORMAT_PNG) {
         /* PNG format specified for screendump */
         if (!png_save(fd, image, errp)) {
