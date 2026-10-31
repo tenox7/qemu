@@ -27,29 +27,43 @@
 #include "system/replay.h"
 
 #include "chardev/char-fe.h"
+#include "chardev/char-tap.h"
 #include "chardev/char-io.h"
 #include "chardev-internal.h"
 
-int qemu_chr_fe_write(CharFrontend *c, const uint8_t *buf, int len)
+static int qemu_chr_fe_write_tapped(CharFrontend *c, const uint8_t *buf,
+                                    int len, bool write_all)
 {
     Chardev *s = c->chr;
+    int ret;
 
     if (!s) {
         return 0;
     }
 
-    return qemu_chr_write(s, buf, len, false);
+    ret = qemu_chr_write(s, buf, len, write_all);
+    if (c->tap) {
+        if (ret > 0) {
+            qemu_chr_tap_append(c->tap, buf, ret);
+        } else if (ret < 0 && errno != EAGAIN) {
+            /*
+             * The backend dropped it (say, a socket with no client), and
+             * nobody retries; the guest did send it, so keep it.
+             */
+            qemu_chr_tap_append(c->tap, buf, len);
+        }
+    }
+    return ret;
+}
+
+int qemu_chr_fe_write(CharFrontend *c, const uint8_t *buf, int len)
+{
+    return qemu_chr_fe_write_tapped(c, buf, len, false);
 }
 
 int qemu_chr_fe_write_all(CharFrontend *c, const uint8_t *buf, int len)
 {
-    Chardev *s = c->chr;
-
-    if (!s) {
-        return 0;
-    }
-
-    return qemu_chr_write(s, buf, len, true);
+    return qemu_chr_fe_write_tapped(c, buf, len, true);
 }
 
 int qemu_chr_fe_read_all(CharFrontend *c, uint8_t *buf, int len)

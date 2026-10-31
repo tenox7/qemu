@@ -22,6 +22,7 @@ struct CharFrontend {
     void *opaque;
     unsigned int tag;
     bool fe_is_open;
+    struct CharTap *tap;        /* history of what was written, if any */
 };
 
 /**

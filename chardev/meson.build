@@ -1,5 +1,6 @@
 chardev_ss.add(files(
   'char-fe.c',
+  'char-tap.c',
   'char-file.c',
   'char-io.c',
   'char-mux.c',
