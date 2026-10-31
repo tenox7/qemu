@@ -585,6 +585,8 @@ static void usb_hid_handle_control(USBDevice *dev, USBPacket *p,
     }
 
     switch (request) {
+    case EndpointOutRequest | USB_REQ_CLEAR_FEATURE:
+        break;
         /* hid specific requests */
     case InterfaceRequest | USB_REQ_GET_DESCRIPTOR:
         switch (value >> 8) {
