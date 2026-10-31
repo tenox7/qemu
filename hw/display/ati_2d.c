@@ -53,6 +53,11 @@ typedef struct {
     bool top_to_bottom;
     bool need_swap;
     uint32_t frgd_clr;
+    uint32_t bkgd_clr;
+    uint32_t brush_type;
+    uint32_t brush[2];
+    bool lsb_first;
+    uint32_t write_mask;
     QemuRect scissor;
 
     QemuRect dst;
@@ -104,6 +109,12 @@ static void setup_2d_blt_ctx(ATIVGAState *s, ATI2DCtx *ctx)
     ctx->top_to_bottom = s->regs.dp_cntl & DST_Y_TOP_TO_BOTTOM;
     ctx->need_swap = (HOST_BIG_ENDIAN != s->vga.big_endian_fb);
     ctx->frgd_clr = s->regs.dp_brush_frgd_clr;
+    ctx->bkgd_clr = s->regs.dp_brush_bkgd_clr;
+    ctx->brush_type = s->regs.dp_datatype & DP_BRUSH_DATATYPE;
+    ctx->brush[0] = s->regs.brush_data[0];
+    ctx->brush[1] = s->regs.brush_data[1];
+    ctx->lsb_first = s->regs.dp_datatype & DP_BYTE_PIX_ORDER;
+    ctx->write_mask = s->regs.dp_write_mask;
     ctx->dst_offset = s->regs.dst_offset;
 
     ctx->scissor.width = s->regs.sc_right - s->regs.sc_left + 1;
@@ -152,11 +163,120 @@ static uint32_t make_filler(int bpp, uint32_t color)
     return color;
 }
 
+static bool rop3_uses_pat(uint8_t rop)
+{
+    return (rop >> 4) != (rop & 0xf);
+}
+
+static bool rop3_uses_src(uint8_t rop)
+{
+    return ((rop >> 2) & 0x33) != (rop & 0x33);
+}
+
+static uint32_t rop3(uint8_t rop, uint32_t p, uint32_t s, uint32_t d)
+{
+    uint32_t r = 0;
+    int i;
+
+    for (i = 0; i < 8; i++) {
+        if (rop & BIT(i)) {
+            r |= (i & 4 ? p : ~p) & (i & 2 ? s : ~s) & (i & 1 ? d : ~d);
+        }
+    }
+    return r;
+}
+
+static uint32_t get_pixel(const ATI2DCtx *ctx, const uint8_t *p)
+{
+    unsigned int bypp = ctx->bpp / 8;
+    uint32_t v = ldn_he_p(p, bypp);
+
+    if (ctx->need_swap) {
+        v = (bypp == 4 ? bswap32(v) : bypp == 2 ? bswap16(v) : v);
+    }
+    return v;
+}
+
+static void put_pixel(const ATI2DCtx *ctx, uint8_t *p, uint32_t v)
+{
+    unsigned int bypp = ctx->bpp / 8;
+
+    if (ctx->need_swap) {
+        v = (bypp == 4 ? bswap32(v) : bypp == 2 ? bswap16(v) : v);
+    }
+    stn_he_p(p, bypp, v);
+}
+
+/* The brush at destination pixel (x, y), false if it is transparent there */
+static bool get_pattern(const ATI2DCtx *ctx, int x, int y, uint32_t *p)
+{
+    uint8_t row;
+    bool fg;
+
+    switch (ctx->brush_type) {
+    case BRUSH_8X8_MONO_FRGD_BKGD:
+    case BRUSH_8X8_MONO_FRGD:
+        row = ctx->brush[(y >> 2) & 1] >> ((y & 3) * 8);
+        fg = row & BIT(ctx->lsb_first ? x & 7 : 7 - (x & 7));
+        if (!fg && ctx->brush_type == BRUSH_8X8_MONO_FRGD) {
+            return false;
+        }
+        *p = fg ? ctx->frgd_clr : ctx->bkgd_clr;
+        return true;
+    default:
+        *p = ctx->frgd_clr;
+        return true;
+    }
+}
+
+static void rop_pixel(const ATI2DCtx *ctx, uint8_t rop, int x, int y,
+                      const uint8_t *src)
+{
+    uint8_t *dst = ctx->dst_bits + y * ctx->dst_stride + x * (ctx->bpp / 8);
+    uint32_t p = 0, s = 0, d, r;
+
+    if (rop3_uses_pat(rop) && !get_pattern(ctx, x, y, &p)) {
+        return;
+    }
+    if (src) {
+        s = get_pixel(ctx, src);
+    }
+    d = get_pixel(ctx, dst);
+    r = rop3(rop, p, s, d);
+    put_pixel(ctx, dst, (r & ctx->write_mask) | (d & ~ctx->write_mask));
+}
+
+/* Any ROP3, brush and write mask, one pixel at a time */
+static void rop_blt(const ATI2DCtx *ctx, const QemuRect *dst,
+                    const QemuRect *src)
+{
+    uint8_t rop = ctx->rop3 >> 16;
+    bool use_src = rop3_uses_src(rop);
+    unsigned int bypp = ctx->bpp / 8;
+    int i, j, x, y;
+
+    for (j = 0; j < dst->height; j++) {
+        y = ctx->top_to_bottom ? j : dst->height - 1 - j;
+        for (i = 0; i < dst->width; i++) {
+            const uint8_t *sp = NULL;
+
+            x = ctx->left_to_right ? i : dst->width - 1 - i;
+            if (use_src) {
+                sp = ctx->src_bits + (src->y + y) * ctx->src_stride +
+                     (src->x + x) * bypp;
+            }
+            rop_pixel(ctx, rop, dst->x + x, dst->y + y, sp);
+        }
+    }
+}
+
 static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
 {
     QemuRect vis_src, vis_dst;
     unsigned int x, y, i, j, bypp = ctx->bpp / 8;
     const uint8_t *vram_end = ctx->vga->vram_ptr + ctx->vga->vram_size;
+    uint32_t pix_mask;
+    bool mono_brush;
 
     if (!ctx->bpp) {
         qemu_log_mask(LOG_GUEST_ERROR, "Invalid bpp\n");
@@ -195,10 +315,7 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
             ctx->src.x, ctx->src.y, ctx->dst.width, ctx->dst.height,
             vis_src.x, vis_src.y, vis_src.width, vis_src.height);
 
-    switch (ctx->rop3) {
-    case ROP3_SRCCOPY:
-    {
-        bool fallback = false;
+    if (rop3_uses_src(ctx->rop3 >> 16)) {
         if (!ctx->src_stride) {
             qemu_log_mask(LOG_GUEST_ERROR, "Zero source pitch\n");
             return false;
@@ -211,6 +328,28 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
             qemu_log_mask(LOG_UNIMP, "blt outside vram not implemented\n");
             return false;
         }
+    }
+
+    pix_mask = (bypp == 4 ? UINT32_MAX : BIT(bypp * 8) - 1);
+    mono_brush = (ctx->brush_type == BRUSH_8X8_MONO_FRGD_BKGD ||
+                  ctx->brush_type == BRUSH_8X8_MONO_FRGD);
+    if ((ctx->write_mask & pix_mask) != pix_mask ||
+        (ctx->rop3 == ROP3_PATCOPY && mono_brush) ||
+        (ctx->rop3 != ROP3_SRCCOPY && ctx->rop3 != ROP3_PATCOPY &&
+         ctx->rop3 != ROP3_BLACKNESS && ctx->rop3 != ROP3_WHITENESS)) {
+        if (ctx->bpp == 24) {
+            qemu_log_mask(LOG_UNIMP, "ROP3 %x unsupported in 24 bits\n",
+                          ctx->rop3 >> 16);
+            return false;
+        }
+        rop_blt(ctx, &vis_dst, &vis_src);
+        return true;
+    }
+
+    switch (ctx->rop3) {
+    case ROP3_SRCCOPY:
+    {
+        bool fallback = false;
 
         DPRINTF("pixman_blt(%p, %p, %ld, %ld, %d, %d, %d, %d, %d, %d, %d, %d)\n",
                 ctx->src_bits, ctx->dst_bits,
@@ -319,9 +458,7 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
         break;
     }
     default:
-        qemu_log_mask(LOG_UNIMP, "Unimplemented ati_2d blt op %x\n",
-                      ctx->rop3 >> 16);
-        return false;
+        g_assert_not_reached();
     }
 
     return true;

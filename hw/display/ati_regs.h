@@ -195,6 +195,8 @@
 #define BRUSH_Y_X                               0x1474
 #define DP_BRUSH_BKGD_CLR                       0x1478
 #define DP_BRUSH_FRGD_CLR                       0x147c
+#define BRUSH_DATA0                             0x1480
+#define BRUSH_DATA63                            0x157c
 #define DST_WIDTH_X                             0x1588
 #define DST_HEIGHT_WIDTH_8                      0x158c
 #define SRC_X_Y                                 0x1590
@@ -420,6 +422,8 @@
 #define DP_SRC_DATATYPE                         0x00030000
 #define DP_BYTE_PIX_ORDER                       0x40000000
 
+#define BRUSH_8X8_MONO_FRGD_BKGD                0x00000000
+#define BRUSH_8X8_MONO_FRGD                     0x00000100
 #define BRUSH_SOLIDCOLOR                        0x00000d00
 
 /* DP_GUI_MASTER_CNTL bit constants */

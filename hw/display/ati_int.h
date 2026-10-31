@@ -83,6 +83,7 @@ typedef struct ATIVGARegs {
     uint32_t dp_gui_master_cntl;
     uint32_t dp_brush_bkgd_clr;
     uint32_t dp_brush_frgd_clr;
+    uint32_t brush_data[64];
     uint32_t dp_src_frgd_clr;
     uint32_t dp_src_bkgd_clr;
     uint16_t sc_top;
