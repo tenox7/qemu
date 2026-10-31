@@ -146,6 +146,7 @@ typedef struct VGACommonState {
     uint32_t hw_cursor_y;
     void (*cursor_invalidate)(struct VGACommonState *s);
     void (*cursor_draw_line)(struct VGACommonState *s, uint8_t *d, int y);
+    bool (*cursor_state)(struct VGACommonState *s, QemuCursorState *cs);
     /* tell for each page if it has been updated since the last time */
     uint32_t last_palette[256];
     uint32_t last_ch_attr[CH_ATTR_SIZE]; /* XXX: make it dynamic */

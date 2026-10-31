@@ -2201,10 +2201,18 @@ const VMStateDescription vmstate_vga_common = {
     }
 };
 
+static bool vga_cursor_state(void *opaque, QemuCursorState *cs)
+{
+    VGACommonState *s = opaque;
+
+    return s->cursor_state && s->cursor_state(s, cs);
+}
+
 static const GraphicHwOps vga_ops = {
-    .invalidate  = vga_invalidate_display,
-    .gfx_update  = vga_update_display,
-    .text_update = vga_update_text,
+    .invalidate   = vga_invalidate_display,
+    .gfx_update   = vga_update_display,
+    .text_update  = vga_update_text,
+    .cursor_state = vga_cursor_state,
 };
 
 static inline uint32_t uint_clamp(uint32_t val, uint32_t vmin, uint32_t vmax)

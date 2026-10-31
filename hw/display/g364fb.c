@@ -471,9 +471,22 @@ static const VMStateDescription vmstate_g364fb = {
     }
 };
 
+static bool g364fb_cursor_state(void *opaque, QemuCursorState *cs)
+{
+    G364State *s = opaque;
+
+    cs->visible = !(s->ctla & CTLA_NO_CURSOR);
+    cs->x = s->cursor_position >> 12;
+    cs->y = s->cursor_position & 0xfff;
+    cs->w = 64;
+    cs->h = 64;
+    return true;
+}
+
 static const GraphicHwOps g364fb_ops = {
-    .invalidate  = g364fb_invalidate_display,
-    .gfx_update  = g364fb_update_display,
+    .invalidate   = g364fb_invalidate_display,
+    .gfx_update   = g364fb_update_display,
+    .cursor_state = g364fb_cursor_state,
 };
 
 static void g364fb_init(DeviceState *dev, G364State *s)

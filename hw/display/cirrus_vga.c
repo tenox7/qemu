@@ -2249,6 +2249,19 @@ static void vga_draw_cursor_line(uint8_t *d1,
     }
 }
 
+static bool cirrus_cursor_state(VGACommonState *s1, QemuCursorState *cs)
+{
+    CirrusVGAState *s = container_of(s1, CirrusVGAState, vga);
+    int size = (s->vga.sr[0x12] & CIRRUS_CURSOR_LARGE) ? 64 : 32;
+
+    cs->visible = s->vga.sr[0x12] & CIRRUS_CURSOR_SHOW;
+    cs->x = s->vga.hw_cursor_x;
+    cs->y = s->vga.hw_cursor_y;
+    cs->w = size;
+    cs->h = size;
+    return true;
+}
+
 static void cirrus_cursor_draw_line(VGACommonState *s1, uint8_t *d1, int scr_y)
 {
     CirrusVGAState *s = container_of(s1, CirrusVGAState, vga);
@@ -2929,6 +2942,7 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
     s->vga.get_resolution = cirrus_get_resolution;
     s->vga.cursor_invalidate = cirrus_cursor_invalidate;
     s->vga.cursor_draw_line = cirrus_cursor_draw_line;
+    s->vga.cursor_state = cirrus_cursor_state;
 
     s->vga.big_endian_fb = false;
 
