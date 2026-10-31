@@ -155,9 +155,28 @@ static const TypeInfo ohci_pci_info = {
     },
 };
 
+/* The OHCI function of the NEC uPD720101, which AIX has a driver for */
+static void ohci_nec_pci_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->vendor_id = PCI_VENDOR_ID_NEC;
+    k->device_id = PCI_DEVICE_ID_NEC_OHCI;
+    k->revision = 0x43;
+    dc->desc = "NEC USB OHCI Controller";
+}
+
+static const TypeInfo ohci_nec_pci_info = {
+    .name          = "nec-usb-ohci",
+    .parent        = TYPE_PCI_OHCI,
+    .class_init    = ohci_nec_pci_class_init,
+};
+
 static void ohci_pci_register_types(void)
 {
     type_register_static(&ohci_pci_info);
+    type_register_static(&ohci_nec_pci_info);
 }
 
 type_init(ohci_pci_register_types)
