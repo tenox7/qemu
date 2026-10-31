@@ -583,6 +583,22 @@ static inline void ati_reg_write_offs(uint32_t *reg, int offs,
     }
 }
 
+/*
+ * With GMC_SRC/DST_PITCH_OFFSET_CNTL clear the engine uses the default pitch
+ * and offset, which may also be set after DP_GUI_MASTER_CNTL (AIX does).
+ */
+static void ati_update_default_pitch_offset(ATIVGAState *s)
+{
+    if (!(s->regs.dp_gui_master_cntl & GMC_SRC_PITCH_OFFSET_CNTL)) {
+        s->regs.src_offset = s->regs.default_offset;
+        s->regs.src_pitch = s->regs.default_pitch;
+    }
+    if (!(s->regs.dp_gui_master_cntl & GMC_DST_PITCH_OFFSET_CNTL)) {
+        s->regs.dst_offset = s->regs.default_offset;
+        s->regs.dst_pitch = s->regs.default_pitch;
+    }
+}
+
 static void ati_mm_write(void *opaque, hwaddr addr,
                            uint64_t data, unsigned int size)
 {
@@ -923,15 +939,7 @@ static void ati_mm_write(void *opaque, hwaddr addr,
         s->regs.dp_datatype = (data & 0x0f00) >> 8 | (data & 0x30f0) << 4 |
                               (data & 0x4000) << 16;
         s->regs.dp_mix = (data & GMC_ROP3_MASK) | (data & 0x7000000) >> 16;
-
-        if (!(data & GMC_SRC_PITCH_OFFSET_CNTL)) {
-            s->regs.src_offset = s->regs.default_offset;
-            s->regs.src_pitch = s->regs.default_pitch;
-        }
-        if (!(data & GMC_DST_PITCH_OFFSET_CNTL)) {
-            s->regs.dst_offset = s->regs.default_offset;
-            s->regs.dst_pitch = s->regs.default_pitch;
-        }
+        ati_update_default_pitch_offset(s);
         if (!(data & GMC_SRC_CLIPPING)) {
             s->regs.src_sc_right = s->regs.default_sc_right;
             s->regs.src_sc_bottom = s->regs.default_sc_bottom;
@@ -1007,11 +1015,13 @@ static void ati_mm_write(void *opaque, hwaddr addr,
             s->regs.default_pitch = (data & 0x3fc00000) >> 16;
             s->regs.default_tile = data >> 30;
         }
+        ati_update_default_pitch_offset(s);
         break;
     case DEFAULT_PITCH:
         if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
             s->regs.default_pitch = data & 0x3fff;
             s->regs.default_tile = (data >> 16) & 1;
+            ati_update_default_pitch_offset(s);
         }
         break;
     case DEFAULT_SC_BOTTOM_RIGHT:
