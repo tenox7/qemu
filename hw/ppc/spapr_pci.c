@@ -543,15 +543,25 @@ static void rtas_ibm_get_config_addr_info2(PowerPCCPU *cpu,
         goto param_error_exit;
     }
 
+    option = rtas_ld(args, 3);
     if (!spapr_phb_eeh_available(sphb)) {
-        goto param_error_exit;
+        /*
+         * Without EEH no device is in a PE. Say so, instead of failing:
+         * AIX drivers treat an error here as fatal, while Linux handles
+         * both answers the same way.
+         */
+        if (option != RTAS_GET_PE_MODE) {
+            goto param_error_exit;
+        }
+        rtas_st(rets, 0, RTAS_OUT_SUCCESS);
+        rtas_st(rets, 1, RTAS_PE_MODE_NONE);
+        return;
     }
 
     /*
      * We always have PE address of form "00BB0001". "BB"
      * represents the bus number of PE's primary bus.
      */
-    option = rtas_ld(args, 3);
     switch (option) {
     case RTAS_GET_PE_ADDR:
         addr = rtas_ld(args, 0);
