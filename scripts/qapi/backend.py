@@ -7,6 +7,7 @@ from .commands import gen_commands
 from .events import gen_events
 from .features import gen_features
 from .introspect import gen_introspect
+from .mcp import gen_mcp
 from .schema import QAPISchema
 from .types import gen_types
 from .visit import gen_visit
@@ -63,3 +64,4 @@ class QAPICBackend(QAPIBackend):
         gen_commands(schema, output_dir, prefix, gen_tracing)
         gen_events(schema, output_dir, prefix)
         gen_introspect(schema, output_dir, prefix, unmask)
+        gen_mcp(schema, output_dir, prefix)
