@@ -1335,6 +1335,13 @@ static void ohci_set_frame_interval(OHCIState *ohci, uint16_t val)
 
 static void ohci_port_power(OHCIState *ohci, int i, int p)
 {
+    /*
+     * With NoPowerSwitching the ports are always powered, so power
+     * commands must not drop the attached devices (AIX sends them).
+     */
+    if (ohci->rhdesc_a & OHCI_RHA_NPS) {
+        return;
+    }
     if (p) {
         ohci->rhport[i].ctrl |= OHCI_PORT_PPS;
     } else {
