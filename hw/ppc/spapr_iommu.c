@@ -48,7 +48,11 @@ SpaprTceTable *spapr_tce_find_by_liobn(target_ulong liobn)
 {
     SpaprTceTable *tcet;
 
-    if (liobn & 0xFFFFFFFF00000000ULL) {
+    /*
+     * The LIOBN is 32 bits. AIX passes it sign-extended, which shows
+     * for the PHB windows: their LIOBNs have bit 31 set.
+     */
+    if (liobn & 0xFFFFFFFF00000000ULL && (int64_t)liobn != (int32_t)liobn) {
         hcall_dprintf("Request for out-of-bounds LIOBN 0x" TARGET_FMT_lx "\n",
                       liobn);
         return NULL;
