@@ -118,9 +118,12 @@ static void query_commands_cb(const QmpCommand *cmd, void *opaque)
 CommandInfoList *qmp_query_commands(Error **errp)
 {
     CommandInfoList *list = NULL;
-    MonitorQMP *mon = MONITOR_QMP(monitor_cur());
+    MonitorQMP *mon = (MonitorQMP *)object_dynamic_cast(OBJECT(monitor_cur()),
+                                                        TYPE_MONITOR_QMP);
 
-    qmp_for_each_command(mon->commands, query_commands_cb, &list);
+    /* other monitors (MCP) always run in command mode */
+    qmp_for_each_command(mon ? mon->commands : &qmp_commands,
+                         query_commands_cb, &list);
 
     return list;
 }

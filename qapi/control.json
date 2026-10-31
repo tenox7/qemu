@@ -176,11 +176,14 @@
 #
 # @control: QMP monitor (JSON-based machine interface)
 #
+# @mcp: MCP monitor (Model Context Protocol, for AI agents) (since
+#     11.2)
+#
 # Since: 5.0
 ##
 { 'enum': 'MonitorMode', 'data': [
     { 'name': 'readline', 'if': 'CONFIG_HMP' },
-    'control' ] }
+    'control', 'mcp' ] }
 
 ##
 # @MonitorOptions:

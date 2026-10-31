@@ -17,3 +17,9 @@ monitor_qmp_err_in_band(const char *desc) "%s"
 monitor_qmp_cmd_out_of_band(const char *id) "%s"
 monitor_qmp_respond(void *mon, const char *json) "mon %p resp: %s"
 handle_qmp_command(void *mon, const char *req) "mon %p req: %s"
+
+# mcp.c
+mcp_request(void *mon, const char *method) "mon %p method %s"
+mcp_send(void *mon, size_t len) "mon %p len %zu"
+mcp_tool_start(void *mon, const char *tool) "mon %p tool %s"
+mcp_tool_done(void *mon, const char *tool, bool discarded, bool error) "mon %p tool %s discarded %d error %d"

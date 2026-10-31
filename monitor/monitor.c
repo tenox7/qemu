@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "monitor-internal.h"
 #include "monitor-hmp-internal.h"
+#include "monitor/mcp.h"
 #include "qapi/error.h"
 #include "qapi/opts-visitor.h"
 #include "qapi/qapi-emit-events.h"
@@ -706,6 +707,13 @@ int monitor_new(MonitorOptions *opts, bool allow_hmp, Error **errp)
     switch (opts->mode) {
     case MONITOR_MODE_CONTROL:
         monitor_new_qmp(opts->id, opts->chardev, opts->pretty, errp);
+        break;
+    case MONITOR_MODE_MCP:
+        if (opts->pretty) {
+            error_setg(errp, "'pretty' is not compatible with MCP monitors");
+            return -1;
+        }
+        monitor_new_mcp(opts->id, opts->chardev, errp);
         break;
 #ifdef CONFIG_HMP
     case MONITOR_MODE_READLINE:
