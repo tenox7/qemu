@@ -54,6 +54,15 @@ static int query_error_class(const char *cmd)
         { "xen-event-list", ERROR_CLASS_GENERIC_ERROR },
         /* requires firmware with memory buffer logging support */
         { "query-firmware-log", ERROR_CLASS_GENERIC_ERROR },
+        /* need a display; the test runs with -machine none */
+        { "screenshot", ERROR_CLASS_GENERIC_ERROR },
+        { "mouse-move", ERROR_CLASS_GENERIC_ERROR },
+        { "mouse-click", ERROR_CLASS_GENERIC_ERROR },
+        { "pointer-locate", ERROR_CLASS_GENERIC_ERROR },
+        { "screen-text", ERROR_CLASS_GENERIC_ERROR },
+        { "frames", ERROR_CLASS_GENERIC_ERROR },
+        /* -machine none has no serial ports */
+        { "serial-read", ERROR_CLASS_GENERIC_ERROR },
         { NULL, -1 }
     };
     int i;

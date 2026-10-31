@@ -66,6 +66,7 @@ if have_system
     'pci',
     'rocker',
     'misc-arm',
+    'mcp',
     'misc-i386',
     'tpm',
     'uefi',

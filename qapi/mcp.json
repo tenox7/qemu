@@ -1,0 +1,1175 @@
+# -*- Mode: Python -*-
+# vim: filetype=python
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+##
+# ===
+# MCP
+# ===
+#
+# Commands with the feature ``mcp`` are offered as tools to MCP
+# clients (AI agents) on the MCP monitor.  They are ordinary QMP
+# commands too.  Coordinates are framebuffer pixels of the chosen
+# console, origin top-left.
+##
+
+{ 'include': 'ui.json' }
+
+##
+# @McpImage:
+#     A PNG image of (part of) a console.
+#
+# @data: the PNG file, base64 encoded
+#
+# @mime-type: always "image/png"
+#
+# @width: image width in pixels
+#
+# @height: image height in pixels
+#
+# @screen-width: framebuffer width of the console
+#
+# @screen-height: framebuffer height of the console
+#
+# @region: the part of the screen in the image, if not all of it
+#
+# @scale: image pixels per framebuffer pixel
+#
+# Since: 11.2
+##
+{ 'struct': 'McpImage',
+  'data': { 'data': 'str', 'mime-type': 'str',
+            'width': 'int', 'height': 'int',
+            'screen-width': 'int', 'screen-height': 'int',
+            '*region': 'ScreenRegion', 'scale': 'number' } }
+
+##
+# @McpResult:
+#     What every MCP tool returns.  The MCP monitor turns @summary
+#     into a text block, each image into an image block, and every
+#     other member into one JSON text block.
+#
+# @summary: one line saying what happened
+#
+# @images: screenshots
+#
+# Since: 11.2
+##
+{ 'struct': 'McpResult',
+  'data': { 'summary': 'str', '*images': [ 'McpImage' ] } }
+
+##
+# @McpScreenshotOptions:
+#     How to take a screenshot.
+#
+# @region: capture only this rectangle
+#
+# @scale: from 0.1 to 2.0 (default: 1.0)
+#
+# Since: 11.2
+##
+{ 'struct': 'McpScreenshotOptions',
+  'data': { '*region': 'ScreenRegion', '*scale': 'number' } }
+
+##
+# @McpScreenshotChoice:
+#     Whether to take a screenshot, and how.
+#
+# @enabled: true for a full screenshot, false for none
+#
+# @options: take a screenshot with these options
+#
+# Since: 11.2
+##
+{ 'alternate': 'McpScreenshotChoice',
+  'data': { 'enabled': 'bool', 'options': 'McpScreenshotOptions' } }
+
+##
+# @McpWaitUntil:
+#     What to wait for.
+#
+# @none: do not wait
+#
+# @change: the screen changes
+#
+# @stable: the screen does not change for a while
+#
+# @change-then-stable: the screen changes, then settles
+#
+# @pixel: a pixel has a given colour
+#
+# Since: 11.2
+##
+{ 'enum': 'McpWaitUntil',
+  'data': [ 'none', 'change', 'stable', 'change-then-stable', 'pixel' ] }
+
+##
+# @McpThen:
+#     What an input tool does after its input was delivered, so that
+#     one call can act, wait and look.
+#
+# @wait: what to wait for; "pixel" is not allowed here (default: none)
+#
+# @delay-ms: sleep this long after the input, before waiting
+#     (default: 0)
+#
+# @timeout-ms: give up waiting after this long, at most 110000
+#     (default: 10000)
+#
+# @stable-ms: how long the screen must not change to be stable
+#     (default: 1000)
+#
+# @screenshot: take a screenshot at the end (default: false)
+#
+# Since: 11.2
+##
+{ 'struct': 'McpThen',
+  'data': { '*wait': 'McpWaitUntil', '*delay-ms': 'int',
+            '*timeout-ms': 'int', '*stable-ms': 'int',
+            '*screenshot': 'McpScreenshotChoice' } }
+
+##
+# @McpWaitInfo:
+#     The outcome of a wait.
+#
+# @matched: the condition was met (false: timeout)
+#
+# @elapsed-ms: time spent
+#
+# @changed-after-ms: when the first counted change happened, counted
+#     from the start of the call
+#
+# @stable-after-ms: when the last counted change happened
+#
+# @changed-pixels: changed pixels counted
+#
+# @box: the area that changed
+#
+# @frame: frame number at the end
+#
+# Since: 11.2
+##
+{ 'struct': 'McpWaitInfo',
+  'data': { 'matched': 'bool', 'elapsed-ms': 'int',
+            '*changed-after-ms': 'int', '*stable-after-ms': 'int',
+            'changed-pixels': 'int', '*box': 'ScreenRegion',
+            'frame': 'int' } }
+
+##
+# @McpPointer:
+#     Where lemu thinks the guest's mouse pointer is.
+#
+# @known: false if the position is unknown
+#
+# @x: x in framebuffer pixels
+#
+# @y: y in framebuffer pixels
+#
+# @method: how the pointer was moved (absolute, closed-loop,
+#     open-loop)
+#
+# Since: 11.2
+##
+{ 'struct': 'McpPointer',
+  'data': { 'known': 'bool', '*x': 'int', '*y': 'int', '*method': 'str' } }
+
+##
+# @McpInputResult:
+#     What an input tool returns.
+#
+# @elapsed-ms: time from the start of the call to the end
+#
+# @pointer: the pointer after the call (mouse tools only)
+#
+# @homed: the pointer was pushed into a corner first
+#
+# @steps: mouse move packets sent
+#
+# @wait: the outcome of the wait in @then
+#
+# @warning: something the caller should know, e.g. Caps Lock is on
+#
+# Since: 11.2
+##
+{ 'struct': 'McpInputResult',
+  'base': 'McpResult',
+  'data': { 'elapsed-ms': 'int', '*pointer': 'McpPointer',
+            '*homed': 'bool', '*steps': 'int', '*wait': 'McpWaitInfo',
+            '*warning': 'str' } }
+
+##
+# @McpConsoleInfo:
+#     A console of the VM.
+#
+# @index: console index
+#
+# @id: device id of the display device
+#
+# @head: head of the device
+#
+# @graphic: true for a graphic console, false for a text console
+#
+# @width: framebuffer width
+#
+# @height: framebuffer height
+#
+# @mouse: "absolute", "relative" or "none"
+#
+# @hw-cursor: the display card reports its hardware cursor
+#
+# Since: 11.2
+##
+{ 'struct': 'McpConsoleInfo',
+  'data': { 'index': 'int', '*id': 'str', 'head': 'int',
+            'graphic': 'bool', 'width': 'int', 'height': 'int',
+            'mouse': 'str', 'hw-cursor': 'bool' } }
+
+##
+# @McpDiskInfo:
+#     A block device of the VM.
+#
+# @device: device or node name, as used by @media
+#
+# @removable: a CD or floppy drive
+#
+# @file: the image file, if any
+#
+# @read-only: writes are refused
+#
+# @snapshot: writes go to a temporary overlay and are lost at exit
+#
+# @tray-open: the tray is open
+#
+# Since: 11.2
+##
+{ 'struct': 'McpDiskInfo',
+  'data': { 'device': 'str', 'removable': 'bool', '*file': 'str',
+            'read-only': 'bool', 'snapshot': 'bool', '*tray-open': 'bool' } }
+
+##
+# @McpVmInfo:
+#     What @vm-info returns.
+#
+# @name: VM name
+#
+# @machine: machine type
+#
+# @status: run state
+#
+# @running: the guest is running
+#
+# @consoles: the consoles
+#
+# @default-console: index of the default console
+#
+# @pointer: the pointer on the default console
+#
+# @disks: block devices
+#
+# @serial: serial ports
+#
+# @device-status: status codes that devices show, such as front
+#     panel LEDs, as "device: text"
+#
+# Since: 11.2
+##
+{ 'struct': 'McpVmInfo',
+  'base': 'McpResult',
+  'data': { 'name': 'str', 'machine': 'str', 'status': 'str',
+            'running': 'bool', 'consoles': [ 'McpConsoleInfo' ],
+            '*default-console': 'int', '*pointer': 'McpPointer',
+            'disks': [ 'McpDiskInfo' ], 'serial': [ 'str' ],
+            'device-status': [ 'str' ] } }
+
+##
+# @vm-info:
+#     Describe the VM: name, machine, run state, consoles (index,
+#     size, mouse type), where the pointer is thought to be, disks
+#     (file, read-only, snapshot, tray) and serial ports.  Use it
+#     first.
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'vm-info',
+  'returns': 'McpVmInfo',
+  'features': [ 'mcp', 'mcp-read-only' ] }
+
+##
+# @screenshot:
+#     Capture a guest console as PNG.  Coordinates in all tools are
+#     framebuffer pixels of this console, origin top-left.  If @scale
+#     is not 1, divide image coordinates by @scale.
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# @head: head of a multi-head device (default: 0)
+#
+# @region: capture only this rectangle
+#
+# @scale: from 0.1 to 2.0 (default: 1.0)
+#
+# @pointer: draw a small marker where lemu thinks the pointer is
+#     (default: false)
+#
+# @frame: an earlier frame from the frames tool, instead of the
+#     screen now
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'screenshot',
+  'data': { '*console': 'any', '*head': 'int',
+            '*region': 'ScreenRegion', '*scale': 'number',
+            '*pointer': 'bool', '*frame': 'int' },
+  'returns': 'McpResult',
+  'features': [ 'mcp', 'mcp-read-only' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpPixel:
+#     A pixel colour to wait for.
+#
+# @x: x in framebuffer pixels
+#
+# @y: y in framebuffer pixels
+#
+# @rgb: colour as "#rrggbb"
+#
+# @tolerance: allowed difference per colour channel (default: 16)
+#
+# Since: 11.2
+##
+{ 'struct': 'McpPixel',
+  'data': { 'x': 'int', 'y': 'int', 'rgb': 'str', '*tolerance': 'int' } }
+
+##
+# @McpWaitResult:
+#     What @wait-screen returns.
+#
+# @wait: the outcome
+#
+# Since: 11.2
+##
+{ 'struct': 'McpWaitResult',
+  'base': 'McpResult',
+  'data': { 'wait': 'McpWaitInfo' } }
+
+##
+# @wait-screen:
+#     Wait until the screen changes, becomes stable, or a pixel has a
+#     colour.  Use it instead of sleeping.  change-then-stable waits
+#     for something to happen, then for it to settle.  Changes smaller
+#     than @min-pixels and blinking text cursors are not counted.  For
+#     long installs, call it in a loop.
+#
+# @until: what to wait for
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# @region: only changes inside this rectangle count
+#
+# @ignore: changes inside these rectangles do not count
+#
+# @min-pixels: a change must touch at least this many pixels
+#     (default: 64)
+#
+# @stable-ms: how long the screen must not change to be stable
+#     (default: 2000)
+#
+# @timeout-ms: give up after this long, at most 110000
+#     (default: 60000)
+#
+# @pixel: the pixel to watch, for "pixel"
+#
+# @ignore-blink: do not count blinking text cursors (default: true)
+#
+# @screenshot: take a screenshot at the end (default: true)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'wait-screen',
+  'data': { 'until': 'McpWaitUntil', '*console': 'any',
+            '*region': 'ScreenRegion', '*ignore': [ 'ScreenRegion' ],
+            '*min-pixels': 'int', '*stable-ms': 'int',
+            '*timeout-ms': 'int', '*pixel': 'McpPixel',
+            '*ignore-blink': 'bool',
+            '*screenshot': 'McpScreenshotChoice' },
+  'returns': 'McpWaitResult',
+  'features': [ 'mcp', 'mcp-read-only' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @key:
+#     Press keys and key combinations, one after another.  Names are
+#     QEMU key names as in HMP sendkey: "ret", "spc", "esc", "tab",
+#     "bksp", "up", "pgdn", "f1", "a", "1", "minus", "ctrl", "alt",
+#     "shift", "meta_l".  Join a combination with "-" or "+"
+#     ("ctrl-alt-delete", "alt-f"); "down*5" presses Down five times.
+#     Aliases: enter, space, escape, del, backspace, pageup, pagedown,
+#     win.  Modifiers go down one by one, then the key, then all come
+#     up in reverse order.
+#
+# @keys: keys or combinations to press, in order
+#
+# @delay-ms: pause after each combination (default: 80)
+#
+# @hold-ms: how long the key stays down (default: 40)
+#
+# @modifier-lead-ms: pause after each modifier goes down (default: 20)
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the input
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'key',
+  'data': { 'keys': [ 'str' ], '*delay-ms': 'int', '*hold-ms': 'int',
+            '*modifier-lead-ms': 'int', '*console': 'any',
+            '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @type-text:
+#     Type a string on the guest keyboard.  "\n" presses Enter, "\t"
+#     Tab.  Every character is checked first; if one cannot be typed,
+#     nothing is typed.  Check that the right field has the focus
+#     first.
+#
+# @text: the text to type
+#
+# @layout: the guest's keyboard layout: "en-us" or a QEMU keymap name
+#     such as "de", "fr", "en-gb" (default: en-us)
+#
+# @char-delay-ms: pause after each character (default: 30)
+#
+# @hold-ms: how long each key stays down (default: 20)
+#
+# @modifier-lead-ms: pause after Shift or AltGr goes down
+#     (default: 20)
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the input
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'type-text',
+  'data': { 'text': 'str', '*layout': 'str', '*char-delay-ms': 'int',
+            '*hold-ms': 'int', '*modifier-lead-ms': 'int',
+            '*console': 'any', '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpPointerMethod:
+#     How to move the pointer.
+#
+# @auto: absolute if the mouse is absolute, else closed-loop if the
+#     display card reports its cursor, else open-loop
+#
+# @absolute: the mouse takes absolute positions
+#
+# @closed-loop: relative moves, corrected by reading the card's
+#     hardware cursor
+#
+# @open-loop: push the pointer into the top-left corner, then move in
+#     small paced steps
+#
+# Since: 11.2
+##
+{ 'enum': 'McpPointerMethod',
+  'data': [ 'auto', 'absolute', 'closed-loop', 'open-loop' ] }
+
+##
+# @McpPointerHome:
+#     When to push the pointer into a corner to learn where it is.
+#
+# @auto: when its position is unknown or older than 10 seconds
+#
+# @always: every time
+#
+# @never: never; fail if the position is unknown
+#
+# Since: 11.2
+##
+{ 'enum': 'McpPointerHome',
+  'data': [ 'auto', 'always', 'never' ] }
+
+##
+# @mouse-move:
+#     Move the mouse pointer to @x, @y, or by @dx, @dy.  Works with
+#     relative mice: see @method.  Give either @x and @y, or @dx and
+#     @dy.
+#
+# @x: target x in framebuffer pixels
+#
+# @y: target y in framebuffer pixels
+#
+# @dx: move right by this much (negative: left)
+#
+# @dy: move down by this much (negative: up)
+#
+# @method: how to move (default: auto)
+#
+# @home: when to home the pointer first (default: auto)
+#
+# @step-px: open loop: largest step, keep it below guest acceleration
+#     (default: 4)
+#
+# @step-delay-ms: open loop: pause between steps (default: 20)
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the move
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'mouse-move',
+  'data': { '*x': 'int', '*y': 'int', '*dx': 'int', '*dy': 'int',
+            '*method': 'McpPointerMethod', '*home': 'McpPointerHome',
+            '*step-px': 'int', '*step-delay-ms': 'int',
+            '*console': 'any', '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @mouse-click:
+#     Click a mouse button, after moving to @x, @y if given.  With a
+#     relative mouse lemu homes the pointer if its position is
+#     unknown, then moves in small paced steps (see @mouse-move).
+#
+# @x: target x in framebuffer pixels
+#
+# @y: target y in framebuffer pixels
+#
+# @button: which button (default: left)
+#
+# @count: 1 to 3; 2 is a double-click (default: 1)
+#
+# @interval-ms: time between clicks (default: 100)
+#
+# @hold-ms: time the button stays down (default: 60)
+#
+# @method: how to move (default: auto)
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the click
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'mouse-click',
+  'data': { '*x': 'int', '*y': 'int', '*button': 'InputButton',
+            '*count': 'int', '*interval-ms': 'int', '*hold-ms': 'int',
+            '*method': 'McpPointerMethod', '*console': 'any',
+            '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpPoint:
+#     A point in framebuffer pixels.
+#
+# @x: x
+#
+# @y: y
+#
+# Since: 11.2
+##
+{ 'struct': 'McpPoint', 'data': { 'x': 'int', 'y': 'int' } }
+
+##
+# @mouse-drag:
+#     Press a button at @from, move to @to in paced steps, release.
+#
+# @from: start point
+#
+# @to: end point
+#
+# @button: which button (default: left)
+#
+# @press-wait-ms: pause after pressing and before releasing
+#     (default: 150)
+#
+# @step-px: largest step while dragging (default: 4)
+#
+# @step-delay-ms: pause between steps (default: 20)
+#
+# @method: how to move to @from (default: auto)
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the drag
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'mouse-drag',
+  'data': { 'from': 'McpPoint', 'to': 'McpPoint', '*button': 'InputButton',
+            '*press-wait-ms': 'int', '*step-px': 'int',
+            '*step-delay-ms': 'int', '*method': 'McpPointerMethod',
+            '*console': 'any', '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpButtonAction:
+#     Press or release.
+#
+# @down: press the button and keep it down
+#
+# @up: release the button
+#
+# Since: 11.2
+##
+{ 'enum': 'McpButtonAction', 'data': [ 'down', 'up' ] }
+
+##
+# @mouse-button:
+#     Press or release a mouse button without moving, for menus that
+#     need press-and-hold: mouse-button down, mouse-move, mouse-button
+#     up.
+#
+# @button: which button (default: left)
+#
+# @action: press or release
+#
+# @console: console index (a number) or device id (a string) to
+#     send to (default: the default console)
+#
+# @then: wait and look after the input
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'mouse-button',
+  'data': { '*button': 'InputButton', 'action': 'McpButtonAction',
+            '*console': 'any', '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpMediaAction:
+#     What to do with removable media.
+#
+# @list: list removable drives and what is in them
+#
+# @insert: insert @file (closes the tray)
+#
+# @eject: eject the medium (opens the tray)
+#
+# Since: 11.2
+##
+{ 'enum': 'McpMediaAction', 'data': [ 'list', 'insert', 'eject' ] }
+
+##
+# @McpMediaResult:
+#     What @media returns.
+#
+# @drives: the removable drives
+#
+# Since: 11.2
+##
+{ 'struct': 'McpMediaResult',
+  'base': 'McpResult',
+  'data': { 'drives': [ 'McpDiskInfo' ] } }
+
+##
+# @media:
+#     List, insert or eject CD-ROM and floppy media.
+#
+# @action: what to do
+#
+# @device: the drive, as listed (needed for insert and eject)
+#
+# @file: the image file to insert
+#
+# @format: image format, e.g. "raw" (default: probed)
+#
+# @read-only: open the image read-only (default: true for CD-ROMs)
+#
+# @force: eject even if the guest locked the tray (default: false)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'media',
+  'data': { 'action': 'McpMediaAction', '*device': 'str', '*file': 'str',
+            '*format': 'str', '*read-only': 'bool', '*force': 'bool' },
+  'returns': 'McpMediaResult',
+  'features': [ 'mcp' ] }
+
+##
+# @McpPowerAction:
+#     What to do with the VM.
+#
+# @pause: stop the guest CPUs
+#
+# @resume: continue a paused guest
+#
+# @reset: hard reset, like the reset button
+#
+# @powerdown: ask the guest to shut down (ACPI power button)
+#
+# @quit: end the emulator at once, without a guest shutdown
+#
+# Since: 11.2
+##
+{ 'enum': 'McpPowerAction',
+  'data': [ 'pause', 'resume', 'reset', 'powerdown', 'quit' ] }
+
+##
+# @vm-power:
+#     Pause, resume, reset, power down or quit the VM.  Never do this
+#     to a VM you did not start unless the user asked.
+#
+# @action: what to do
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-destructive: may lose guest state
+#
+# Since: 11.2
+##
+{ 'command': 'vm-power',
+  'data': { 'action': 'McpPowerAction' },
+  'returns': 'McpResult',
+  'features': [ 'mcp', 'mcp-destructive' ] }
+
+##
+# @McpSerialResult:
+#     What a serial tool returns.  The text itself is in the summary.
+#
+# @port: the port
+#
+# @cursor: offset after the returned text; pass it to the next
+#     serial-read or serial-expect
+#
+# @start: offset where the returned text starts
+#
+# @lost: bytes that were too old to keep, between the cursor that was
+#     asked for and @start
+#
+# @matched: serial-expect: the pattern matched
+#
+# @match: serial-expect: the text that matched
+#
+# Since: 11.2
+##
+{ 'struct': 'McpSerialResult',
+  'base': 'McpResult',
+  'data': { 'port': 'str', 'cursor': 'int', 'start': 'int',
+            '*lost': 'int', '*matched': 'bool', '*match': 'str' } }
+
+##
+# @serial-read:
+#     Read what the guest wrote to a serial port, without using it up.
+#     lemu keeps the last 1 MB of each port.  Offsets count every
+#     byte since the VM started.
+#
+# @port: "serial0", "serial1", ... or a chardev id (default: serial0)
+#
+# @cursor: offset to read from (default: where the last serial-read
+#     or serial-expect stopped)
+#
+# @max-bytes: at most this much, up to 16384 (default: 4096)
+#
+# @strip-ansi: remove terminal escape sequences (default: true)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'serial-read',
+  'data': { '*port': 'str', '*cursor': 'int', '*max-bytes': 'int',
+            '*strip-ansi': 'bool' },
+  'returns': 'McpSerialResult',
+  'features': [ 'mcp', 'mcp-read-only' ] }
+
+##
+# @serial-write:
+#     Send text to a serial port, as if typed on a terminal.  Old
+#     Unix consoles want "\r" to end a line.
+#
+# @port: "serial0", "serial1", ... or a chardev id (default: serial0)
+#
+# @text: the text
+#
+# @escapes: turn \r, \n, \t, \e, \\ and \xHH in @text into the
+#     characters they name (default: true)
+#
+# @char-delay-ms: pause after each character, for slow guests
+#     (default: 0)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'serial-write',
+  'data': { '*port': 'str', 'text': 'str', '*escapes': 'bool',
+            '*char-delay-ms': 'int' },
+  'returns': 'McpResult',
+  'features': [ 'mcp' ],
+  'coroutine': true }
+
+##
+# @serial-expect:
+#     Wait until serial output matches a regular expression.  Returns
+#     the text up to the end of the match and the cursor after it.
+#     Use "(?i)" for case-insensitive matching.
+#
+# @port: "serial0", "serial1", ... or a chardev id (default: serial0)
+#
+# @pattern: a regular expression (PCRE)
+#
+# @cursor: offset to search from (default: where the last
+#     serial-read or serial-expect stopped)
+#
+# @timeout-ms: give up after this long, at most 110000 (default:
+#     30000)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'serial-expect',
+  'data': { '*port': 'str', 'pattern': 'str', '*cursor': 'int',
+            '*timeout-ms': 'int' },
+  'returns': 'McpSerialResult',
+  'features': [ 'mcp', 'mcp-read-only' ],
+  'coroutine': true }
+
+##
+# @McpTextHighlight:
+#     A run of text in a different background colour from most of the
+#     screen, such as a selected menu item.
+#
+# @row: row, from 0
+#
+# @col: column, from 0
+#
+# @len: length of the coloured run, in characters
+#
+# @text: the text in the run, without spaces at either end
+#
+# Since: 11.2
+##
+{ 'struct': 'McpTextHighlight',
+  'data': { 'row': 'int', 'col': 'int', 'len': 'int', 'text': 'str' } }
+
+##
+# @McpScreenTextResult:
+#     The screen as text.  The rows are in the summary.
+#
+# @columns: characters per row
+#
+# @rows: number of rows
+#
+# @cursor-col: column of the text cursor, if shown
+#
+# @cursor-row: row of the text cursor, if shown
+#
+# @highlights: highlighted runs (at most 50)
+#
+# Since: 11.2
+##
+{ 'struct': 'McpScreenTextResult',
+  'base': 'McpResult',
+  'data': { 'columns': 'int', 'rows': 'int', '*cursor-col': 'int',
+            '*cursor-row': 'int', 'highlights': [ 'McpTextHighlight' ] },
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @screen-text:
+#     Read a text-mode screen (PC BIOS, DOS, NT text-mode setup and
+#     boot screens) as text, with the cursor and highlighted runs.
+#     Cheaper and more exact than a screenshot.  Fails in graphics
+#     modes; use screenshot there.
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'screen-text',
+  'data': { '*console': 'any' },
+  'returns': 'McpScreenTextResult',
+  'features': [ 'mcp', 'mcp-read-only' ],
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @pointer-locate:
+#     Find where the guest's mouse pointer really is and correct
+#     lemu's idea of it.  Uses the display card's cursor when there
+#     is one; otherwise nudges the mouse and looks for what moved,
+#     which gives the corner of the pointer image.  Use it when
+#     clicks land in the wrong place.
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'pointer-locate',
+  'data': { '*console': 'any' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @mouse-wheel:
+#     Turn the mouse wheel, optionally after moving to @x, @y.
+#
+# @x: x in framebuffer pixels
+#
+# @y: y in framebuffer pixels
+#
+# @steps: wheel steps; positive scrolls down (or right), negative up
+#     (or left)
+#
+# @horizontal: scroll sideways (default: false)
+#
+# @step-delay-ms: pause between steps (default: 50)
+#
+# @method: how to move the pointer (default: auto)
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# @then: wait and look after the input
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# Since: 11.2
+##
+{ 'command': 'mouse-wheel',
+  'data': { '*x': 'int', '*y': 'int', 'steps': 'int',
+            '*horizontal': 'bool', '*step-delay-ms': 'int',
+            '*method': 'McpPointerMethod', '*console': 'any',
+            '*then': 'McpThen' },
+  'returns': 'McpInputResult',
+  'features': [ 'mcp' ],
+  'coroutine': true,
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpSnapshotAction:
+#
+# @list: list the snapshots
+#
+# @save: save the whole VM under @name (replaces one with that name)
+#
+# @load: go back to snapshot @name; what happened since is lost
+#
+# @delete: delete snapshot @name
+#
+# Since: 11.2
+##
+{ 'enum': 'McpSnapshotAction', 'data': [ 'list', 'save', 'load', 'delete' ] }
+
+##
+# @McpSnapshotInfo:
+#
+# @name: snapshot name
+#
+# @date: when it was taken, as "YYYY-MM-DD HH:MM:SS" local time
+#
+# @vm-state-size: bytes of saved RAM and device state
+#
+# Since: 11.2
+##
+{ 'struct': 'McpSnapshotInfo',
+  'data': { 'name': 'str', 'date': 'str', 'vm-state-size': 'int' } }
+
+##
+# @McpSnapshotResult:
+#
+# @snapshots: the snapshots after the action
+#
+# Since: 11.2
+##
+{ 'struct': 'McpSnapshotResult',
+  'base': 'McpResult',
+  'data': { 'snapshots': [ 'McpSnapshotInfo' ] } }
+
+##
+# @vm-snapshot:
+#     Save, load, list or delete whole-VM snapshots (RAM, devices and
+#     disks).  Needs writable qcow2 disks.  Save one before a risky
+#     step, load it to go back.
+#
+# @action: what to do
+#
+# @name: the snapshot (needed for save, load and delete)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-destructive: load and delete lose state
+#
+# Since: 11.2
+##
+{ 'command': 'vm-snapshot',
+  'data': { 'action': 'McpSnapshotAction', '*name': 'str' },
+  'returns': 'McpSnapshotResult',
+  'features': [ 'mcp', 'mcp-destructive' ] }
+
+##
+# @McpFrameInfo:
+#
+# @frame: frame number; screenshot takes it as @frame
+#
+# @ago-ms: how long ago it appeared
+#
+# @shown-ms: how long it was on screen (so far, for the current one)
+#
+# @current: it is on screen now
+#
+# @box: where the next frame changed it
+#
+# @changed-pixels: how many pixels the next frame changed
+#
+# @width: its width, if a mode change replaced it
+#
+# @height: its height, if a mode change replaced it
+#
+# Since: 11.2
+##
+{ 'struct': 'McpFrameInfo',
+  'data': { 'frame': 'int', 'ago-ms': 'int', 'shown-ms': 'int',
+            'current': 'bool', '*box': 'ScreenRegion',
+            '*changed-pixels': 'int', '*width': 'int', '*height': 'int' },
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @McpFramesResult:
+#
+# @frames: newest first
+#
+# Since: 11.2
+##
+{ 'struct': 'McpFramesResult',
+  'base': 'McpResult',
+  'data': { 'frames': [ 'McpFrameInfo' ] },
+  'if': 'CONFIG_PIXMAN' }
+
+##
+# @frames:
+#     List the recent distinct screens, newest first, so you can find
+#     one that went by too fast (a boot banner, an error box).  Fetch
+#     one in full with screenshot's @frame.  Blinking cursors are left
+#     out.  Old frames are dropped once they need more than 64 MB.
+#
+# @console: console index (a number) or device id (a string)
+#     (default: the default console)
+#
+# @count: at most this many frames, up to 100 (default: 20)
+#
+# @thumbnails: small pictures of the first this many frames listed,
+#     up to 5 (default: 0)
+#
+# Features:
+#
+# @mcp: offered as an MCP tool
+#
+# @mcp-read-only: does not change the VM
+#
+# Since: 11.2
+##
+{ 'command': 'frames',
+  'data': { '*console': 'any', '*count': 'int', '*thumbnails': 'int' },
+  'returns': 'McpFramesResult',
+  'features': [ 'mcp', 'mcp-read-only' ],
+  'if': 'CONFIG_PIXMAN' }

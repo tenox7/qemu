@@ -13,6 +13,8 @@ system_ss.add(files(
   'exit-with-parent.c',
   'globals.c',
   'ioport.c',
+  'mcp-cmds.c',
+  'mcp-serial.c',
   'ram-block-attributes.c',
   'ram-discard-manager.c',
   'memory_mapping.c',

@@ -103,7 +103,11 @@
 #include "fsdev/qemu-fsdev.h"
 #endif
 #include "system/qtest.h"
+#include "system/mcp-serial.h"
 #include "system/registry.h"
+#ifdef CONFIG_PIXMAN
+#include "ui/frames.h"
+#endif
 #ifdef CONFIG_TCG
 #include "tcg/perf.h"
 #endif
@@ -2123,6 +2127,14 @@ static void qemu_create_late_backends(void)
     if (tpm_init() < 0) {
         exit(1);
     }
+
+    mcp_serial_init();
+#ifdef CONFIG_PIXMAN
+    if (mcp_enabled && !qtest_chrdev) {
+        /* from the start, so the frames history has the boot screens */
+        qemu_frames_track_all();
+    }
+#endif
 
     /* The default MCP socket and the registry entry */
     if (mcp_enabled && !qtest_chrdev) {
