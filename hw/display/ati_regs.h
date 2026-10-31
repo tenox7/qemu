@@ -242,6 +242,7 @@
 #define DST_TILE                                0x1700
 #define WAIT_UNTIL                              0x1720
 #define CACHE_CNTL                              0x1724
+#define RBBM_GUICNTL                            0x172c
 #define GUI_STAT                                0x1740
 #define PC_GUI_MODE                             0x1744
 #define PC_GUI_CTLSTAT                          0x1748
@@ -388,6 +389,13 @@
 
 #define BUS_MASTER_DIS                          0x00000040
 #define PM4_BUFFER_CNTL_NONPM4                  0x00000000
+
+/* RBBM_GUICNTL bit constants */
+#define HOST_DATA_SWAP_MASK                     0x00000003
+#define HOST_DATA_SWAP_NONE                     0x00000000
+#define HOST_DATA_SWAP_16BIT                    0x00000001
+#define HOST_DATA_SWAP_32BIT                    0x00000002
+#define HOST_DATA_SWAP_HDW                      0x00000003
 
 /* DP_DATATYPE bit constants */
 #define DST_8BPP                                0x00000002

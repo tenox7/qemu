@@ -387,6 +387,9 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
     case GUI_STAT:
         val = 64; /* free CMDFIFO entries */
         break;
+    case RBBM_GUICNTL:
+        val = s->regs.rbbm_guicntl;
+        break;
     case CRTC_H_TOTAL_DISP:
         val = s->regs.crtc_h_total_disp;
         break;
@@ -1020,6 +1023,11 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     case SRC_SC_BOTTOM:
         s->regs.src_sc_bottom = data & 0x3fff;
         break;
+    case RBBM_GUICNTL:
+        if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF) {
+            s->regs.rbbm_guicntl = data & HOST_DATA_SWAP_MASK;
+        }
+        break;
     case HOST_DATA0:
     case HOST_DATA1:
     case HOST_DATA2:
@@ -1030,6 +1038,17 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     case HOST_DATA7:
     case HOST_DATA_LAST:
         if (!s->host_data.active) {
+            break;
+        }
+        switch (s->regs.rbbm_guicntl & HOST_DATA_SWAP_MASK) {
+        case HOST_DATA_SWAP_16BIT:
+            data = ((data & 0x00ff00ff) << 8) | ((data >> 8) & 0x00ff00ff);
+            break;
+        case HOST_DATA_SWAP_32BIT:
+            data = bswap32(data);
+            break;
+        case HOST_DATA_SWAP_HDW:
+            data = ror32(data, 16);
             break;
         }
         s->host_data.acc[s->host_data.next++] = data;
@@ -1170,6 +1189,7 @@ static void ati_vga_reset(DeviceState *dev)
     s->host_data.next = 0;
     s->host_data.row = 0;
     s->host_data.col = 0;
+    s->regs.rbbm_guicntl = 0;
 }
 
 static void ati_vga_exit(PCIDevice *dev)

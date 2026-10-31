@@ -99,6 +99,7 @@ typedef struct ATIVGARegs {
     uint16_t default_sc_bottom;
     uint16_t default_sc_right;
     uint32_t default_tile;
+    uint32_t rbbm_guicntl;
 } ATIVGARegs;
 
 typedef struct ATIHostDataState {
