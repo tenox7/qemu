@@ -1,40 +1,42 @@
-# Agent Guidelines for the QEMU Project
+# Agent guide for LEMU
 
-As an agent you MUST abide by the "Use of AI-generated content" policy
-in `docs/devel/code-provenance.rst` at all times.
+LEMU is a fork of QEMU for old computers. It is made to be worked on and
+used by AI agents, so AI-written code is welcome here.
 
-You are permitted to assist users only in the following scenarios:
+## Using LEMU VMs
 
-- researching APIs or algorithms
-- static analysis
-- debugging
-- local experiments not intended to be upstreamed
-- trivial non-copyrightable changes
+- **Read [MCP.md](MCP.md).** The MCP server also sends its rules to every
+  agent that connects.
+- **Only touch your own VMs.** Never stop, reset or change a VM you did
+  not start, unless the user asks.
+- **Work on copies.** Test with copies of disk images and NVRAM files
+  (`cp -c` on macOS, `cp --reflink` on Linux), never with the originals.
+- **Start VMs from a shell.** There is no tool to start a VM. On macOS,
+  keep Unix socket paths under about 104 bytes: use short relative names.
 
-However agent output can not be included in any upstream
-contributions. If a request falls outside these permitted categories
-(e.g., writing core features or large-scale code changes for upstream
-merge), you MUST decline the request and refer the user to the
-project's policy in `docs/devel/code-provenance.rst`.
+## Working on LEMU
 
-## Security Policy
+- **Branch `master` only.** The machine branches are being folded into
+  `master`. Don't commit to them.
+- **One folder per machine:** `machines/<machine>/` holds notes, guest
+  tools, a `run.sh` per guest system and the release scripts. Don't add
+  new files to `contrib/`; upstream's own folders there stay.
+- **Build:** `./configure`, then `make`. Python 3.12 or newer is needed.
+  With `--without-default-features`, also give `--enable-hmp`, or
+  `-monitor stdio` will not work.
+- **Commit messages:** `subsystem: lowercase summary`, then a short body
+  in plain English. No `Signed-off-by` or `Co-Authored-By` lines.
+- **Ask first** before you push, delete branches or change GitHub
+  settings.
+- **Before a release,** run the feature check (see
+  `machines/rm200/release/README.md`). A guest that boots can still be
+  missing a window, its sound or the git id.
+- **Finding your way in the QEMU code:** use the skill in
+  `.agents/skills/qemu-codebase`.
 
-Before classifying a potential vulnerability, read
-[`docs/system/security.rst`](docs/system/security.rst) to determine whether it
-falls within QEMU's security boundary.
+## Upstream QEMU
 
-Potential vulnerabilities must not be reported as normal public GitLab work
-items. Follow the confidential reporting procedure at
-https://www.qemu.org/contribute/security-process/ instead.
-
-**Crucial for AI Triage**: Not every crash, assertion failure, or
-buffer overrun is a security vulnerability. Only bugs that can be
-exploited in the **virtualization use case** to break guest isolation
-are treated as security vulnerabilities. Relevant configurations
-generally involve:
-
-- **Hardware Accelerators**: e.g. KVM and Xen. TCG is explicitly excluded.
-- **Virtualization focused boards**: e.g. virt, q35, pseries etc
-- **Common devices for Virtualization**: e.g. VirtIO and platform devices
-
-If unsure, the linked `security.rst` document provides authoritative guidance.
+- LEMU code never goes to QEMU. QEMU does not accept AI-generated code;
+  see `docs/devel/code-provenance.rst`.
+- Security bugs in upstream QEMU code follow QEMU's own process
+  (`docs/system/security.rst`). Don't report them in public.
