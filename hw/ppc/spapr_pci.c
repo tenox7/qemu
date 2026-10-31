@@ -1372,6 +1372,44 @@ char *spapr_pci_fw_dev_name(PCIDevice *dev)
     }
 }
 
+/*
+ * "compatible" as in the PCI bus binding, most specific first. AIX finds
+ * the driver for a device from its pciVVVV,DDDD entry.
+ */
+static void spapr_dt_pci_compatible(void *fdt, int offset, PCIDevice *dev)
+{
+    const char *bus = pci_is_express(dev) ? "pciex" : "pci";
+    uint32_t vendor_id = pci_default_read_config(dev, PCI_VENDOR_ID, 2);
+    uint32_t device_id = pci_default_read_config(dev, PCI_DEVICE_ID, 2);
+    uint32_t revision_id = pci_default_read_config(dev, PCI_REVISION_ID, 1);
+    uint32_t ccode = pci_default_read_config(dev, PCI_CLASS_PROG, 3);
+    uint32_t ssvid = pci_default_read_config(dev, PCI_SUBSYSTEM_VENDOR_ID, 2);
+    uint32_t ssid = pci_default_read_config(dev, PCI_SUBSYSTEM_ID, 2);
+    g_autoptr(GString) compat = g_string_new(NULL);
+
+    if (ssvid) {
+        g_string_append_printf(compat, "%s%x,%x.%x.%x.%x", bus, vendor_id,
+                               device_id, ssvid, ssid, revision_id);
+        g_string_append_c(compat, '\0');
+        g_string_append_printf(compat, "%s%x,%x.%x.%x", bus, vendor_id,
+                               device_id, ssvid, ssid);
+        g_string_append_c(compat, '\0');
+        g_string_append_printf(compat, "%s%x,%x", bus, ssvid, ssid);
+        g_string_append_c(compat, '\0');
+    }
+    g_string_append_printf(compat, "%s%x,%x.%x", bus, vendor_id, device_id,
+                           revision_id);
+    g_string_append_c(compat, '\0');
+    g_string_append_printf(compat, "%s%x,%x", bus, vendor_id, device_id);
+    g_string_append_c(compat, '\0');
+    g_string_append_printf(compat, "%sclass,%06x", bus, ccode);
+    g_string_append_c(compat, '\0');
+    g_string_append_printf(compat, "%sclass,%04x", bus, ccode >> 8);
+    g_string_append_c(compat, '\0');
+
+    _FDT(fdt_setprop(fdt, offset, "compatible", compat->str, compat->len));
+}
+
 /* create OF node for pci device and required OF DT properties */
 static int spapr_dt_pci_device(SpaprPhbState *sphb, PCIDevice *dev,
                                void *fdt, int parent_offset)
@@ -1401,6 +1439,7 @@ static int spapr_dt_pci_device(SpaprPhbState *sphb, PCIDevice *dev,
     _FDT(fdt_setprop_cell(fdt, offset, "revision-id", revision_id));
 
     _FDT(fdt_setprop_cell(fdt, offset, "class-code", ccode));
+    spapr_dt_pci_compatible(fdt, offset, dev);
     if (irq_pin) {
         _FDT(fdt_setprop_cell(fdt, offset, "interrupts", irq_pin));
     }
