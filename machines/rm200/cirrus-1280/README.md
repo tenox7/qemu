@@ -61,6 +61,7 @@ Other builds or service packs have a different md5. The tool refuses those inste
 - 2026-10-27: `/Volumes/osarchive/os/winnt/VMs/qemu-mips/nt4-rm200-qemu.tar.lz` repacked with the
   patched disk. Only the disk changed. It boots to the desktop at 1280x1024.
 - 2026-10-27: scripts and this README in git: `tenox7/qemu`, branch `rm200`, `contrib/rm200/cirrus-1280/`.
+- 2026-10-30: moved to `machines/rm200/cirrus-1280/` on branch `master`.
 
 ## Tested (on a clone of nt40.hda, not the live disk)
 
