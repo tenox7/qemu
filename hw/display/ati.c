@@ -509,6 +509,9 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
         val = ati_reg_read_offs(s->regs.brush_data[(addr - BRUSH_DATA0) / 4],
                                 addr & 3, size);
         break;
+    case DST_LINE_START:
+        val = s->regs.dst_line_start;
+        break;
     case DP_SRC_FRGD_CLR:
         val = s->regs.dp_src_frgd_clr;
         break;
@@ -995,6 +998,12 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     case BRUSH_DATA0 ... BRUSH_DATA63 + 3:
         ati_reg_write_offs(&s->regs.brush_data[(addr - BRUSH_DATA0) / 4],
                            addr & 3, data, size);
+        break;
+    case DST_LINE_START:
+        s->regs.dst_line_start = data;
+        break;
+    case DST_LINE_END:
+        ati_2d_line(s, data);
         break;
     case DP_CNTL:
         s->regs.dp_cntl = data;

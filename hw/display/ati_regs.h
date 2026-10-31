@@ -215,6 +215,9 @@
 #define CLR_CMP_MASK                            0x15cc
 #define DP_SRC_FRGD_CLR                         0x15d8
 #define DP_SRC_BKGD_CLR                         0x15dc
+#define DST_LINE_START                          0x1600
+#define DST_LINE_END                            0x1604
+#define DST_LINE_PATCOUNT                       0x1608
 #define DST_BRES_ERR                            0x1628
 #define DST_BRES_INC                            0x162c
 #define DST_BRES_DEC                            0x1630

@@ -492,6 +492,58 @@ void ati_2d_blt(ATIVGAState *s)
     }
 }
 
+/* Draw from DST_LINE_START to end, no last pixel unless DST_LAST_PEL */
+void ati_2d_line(ATIVGAState *s, uint32_t end)
+{
+    ATI2DCtx ctx;
+    const uint8_t *vram_end = s->vga.vram_ptr + s->vga.vram_size;
+    int x = (int16_t)s->regs.dst_line_start;
+    int y = (int16_t)(s->regs.dst_line_start >> 16);
+    int x1 = (int16_t)end, y1 = (int16_t)(end >> 16);
+    int dx = abs(x1 - x), dy = abs(y1 - y);
+    int sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1;
+    int err = (dx > dy ? dx : -dy) / 2, e, n;
+    unsigned int bypp;
+
+    /* a polyline continues from here */
+    s->regs.dst_line_start = end;
+
+    ati_host_data_finish(s);
+    setup_2d_blt_ctx(s, &ctx);
+    if (!ctx.bpp || ctx.bpp == 24 || !ctx.dst_stride) {
+        qemu_log_mask(LOG_UNIMP, "line: unsupported bpp %d or zero pitch\n",
+                      ctx.bpp);
+        return;
+    }
+    bypp = ctx.bpp / 8;
+    ctx.dst.x = MAX(MIN(x, x1), 0);
+    ctx.dst.y = MAX(MIN(y, y1), 0);
+    ctx.dst.width = MAX(x, x1) + 1 - ctx.dst.x;
+    ctx.dst.height = MAX(y, y1) + 1 - ctx.dst.y;
+    if (ctx.dst.width <= 0 || ctx.dst.height <= 0) {
+        return;
+    }
+
+    n = MAX(dx, dy) + (s->regs.dp_cntl & DST_LAST_PEL ? 1 : 0);
+    while (n--) {
+        if (x >= ctx.scissor.x && x < ctx.scissor.x + ctx.scissor.width &&
+            y >= ctx.scissor.y && y < ctx.scissor.y + ctx.scissor.height &&
+            ctx.dst_bits + y * ctx.dst_stride + (x + 1) * bypp <= vram_end) {
+            rop_pixel(&ctx, ctx.rop3 >> 16, x, y, NULL);
+        }
+        e = err;
+        if (e > -dx) {
+            err -= dy;
+            x += sx;
+        }
+        if (e < dy) {
+            err += dx;
+            y += sy;
+        }
+    }
+    ati_set_dirty(&ctx);
+}
+
 bool ati_host_data_flush(ATIVGAState *s)
 {
     ATI2DCtx ctx, chunk;
