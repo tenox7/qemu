@@ -1,0 +1,24 @@
+# What every Jensen kit build must have. check.sh fails the build if one is
+# missing. WHERE is all, a platform (macos, linux) or a binary name.
+# The Windows build is not run; build-windows.sh checks its configure
+# summary and version string instead.
+#
+# WHERE   KIND     NAME            # why
+all       version  git-id          # --version names the commit, so a bug report says which build
+all       monitor  hmp             # README.txt: Ctrl-Alt-2 opens the QEMU monitor
+macos     display  cocoa           # the Mac window, as in the first kit
+linux     display  sdl             # the Linux window
+all       accel    tcg             # the only accelerator for Alpha guests
+all       netdev   user            # run.sh uses -netdev user
+macos     netdev   vmnet-shared    # Mac networking without slirp
+macos     audio    coreaudio       # sound on the Mac, for -device sb16
+linux     audio    pa              # the default sound on Linux, for -device sb16
+linux     audio    alsa            # sound on Linux hosts without PulseAudio
+all       format   qcow2           # the kit disks
+all       format   raw             # the flash images, CD and floppy images
+all       machine  jensen          # both kits
+all       device   jensen-aha1742  # the SCSI adapter in run.sh
+all       device   scsi-hd         # the kit disks
+all       device   scsi-cd         # the empty CD-ROM drive in run.sh
+all       device   ne2k_isa        # the network card in run.sh
+all       device   sb16            # the sound card, -device sb16

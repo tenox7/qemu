@@ -1,0 +1,25 @@
+# Features other builds have that the Jensen kits leave out on purpose.
+# check.sh does not count these as lost. Found by comparing with the user's
+# own build (all default features, Cocoa and SDL) and the first
+# nt31axp-qemu kit. PATTERN is a shell glob.
+#
+# KIND    PATTERN       # why
+display   sdl           # Mac only: Cocoa is the window, as in the first kit; with SDL built in, SDL would become the default. Linux has SDL
+audio     sdl           # comes with SDL; the Mac uses Core Audio, Linux PulseAudio or ALSA
+device    vhost-*       # KVM and virtio back ends; NT for Alpha has no virtio drivers
+device    virtio-9p-*   # 9p shared folders need virtio drivers in the guest
+device    usb-host      # host USB passthrough; the Jensen has no USB
+display   curses        # text-mode window; the guests run in graphics mode
+display   dbus          # D-Bus display; needs a D-Bus client on the host
+chardev   dbus          # part of the D-Bus display
+audio     dbus          # part of the D-Bus display
+chardev   qemu-vdagent  # SPICE agent clipboard; no agent for these guests
+audio     oss           # old Linux sound, only tried when PulseAudio is missing; alsa is in
+audio     sndio         # OpenBSD sound
+format    ftp*          # disk images over FTP (curl); the kits use local files
+format    http*         # disk images over HTTP (curl); the kits use local files
+format    ssh           # disk images over SSH (libssh); the kits use local files
+format    replication   # COLO fault tolerance
+netdev    l2tpv3        # L2TPv3 tunnels; the kits use -netdev user
+netdev    passt         # needs the passt program on the host; the kits use -netdev user
+netdev    vhost-vdpa    # KVM and virtio
