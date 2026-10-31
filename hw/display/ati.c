@@ -44,6 +44,7 @@ static const struct {
 } ati_model_aliases[] = {
     { "rage128p", PCI_DEVICE_ID_ATI_RAGE128_PF },
     { "rv100", PCI_DEVICE_ID_ATI_RADEON_QY },
+    { "es1000", PCI_DEVICE_ID_ATI_RADEON_ES1000 },
 };
 
 enum { VGA_MODE, EXT_MODE };
@@ -831,7 +832,7 @@ static void ati_mm_write(void *opaque, hwaddr addr,
         }
         break;
     case DST_TILE:
-        if (s->dev_id == PCI_DEVICE_ID_ATI_RADEON_QY) {
+        if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF) {
             s->regs.dst_tile = data & 3;
         }
         break;
@@ -1077,14 +1078,20 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
         }
     }
     if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF &&
-        s->dev_id != PCI_DEVICE_ID_ATI_RADEON_QY) {
+        s->dev_id != PCI_DEVICE_ID_ATI_RADEON_QY &&
+        s->dev_id != PCI_DEVICE_ID_ATI_RADEON_ES1000) {
         error_setg(errp, "Unknown ATI VGA device id, "
-                   "only 0x5046 and 0x5159 are supported");
+                   "only 0x5046, 0x5159 and 0x515e are supported");
         return;
     }
     pci_set_word(dev->config + PCI_DEVICE_ID, s->dev_id);
+    if (s->dev_id == PCI_DEVICE_ID_ATI_RADEON_ES1000) {
+        /* the AIX driver only accepts the subsystem ID of ATI's board */
+        pci_set_word(dev->config + PCI_SUBSYSTEM_VENDOR_ID, PCI_VENDOR_ID_ATI);
+        pci_set_word(dev->config + PCI_SUBSYSTEM_ID, s->dev_id);
+    }
 
-    if (s->dev_id == PCI_DEVICE_ID_ATI_RADEON_QY &&
+    if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF &&
         s->vga.vram_size_mb < 16) {
         warn_report("Too small video memory for device id");
         s->vga.vram_size_mb = 16;
@@ -1109,8 +1116,9 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
     qdev_realize(DEVICE(&s->i2cddc), BUS(i2cbus), &error_abort);
 
     /* mmio register space */
-    memory_region_init_io(&s->mm, OBJECT(s), &ati_mm_ops, s,
-                          "ati.mmregs", 0x4000);
+    memory_region_init_io(&s->mm, OBJECT(s), &ati_mm_ops, s, "ati.mmregs",
+                          s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF ?
+                          ATI_RAGE128_MMIO_SIZE : ATI_R100_MMIO_SIZE);
     /* io space is alias to beginning of mmregs */
     memory_region_init_alias(&s->io, OBJECT(s), "ati.io", &s->mm, 0, 0x100);
 
