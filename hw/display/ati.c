@@ -1006,6 +1006,13 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     case DP_WRITE_MASK:
         s->regs.dp_write_mask = data;
         break;
+    case DP_CNTL_XDIR_YDIR_YMAJOR:
+        s->regs.dp_cntl &= ~(DST_X_LEFT_TO_RIGHT | DST_Y_TOP_TO_BOTTOM |
+                             DST_Y_MAJOR);
+        s->regs.dp_cntl |= (data & BIT(31) ? DST_X_LEFT_TO_RIGHT : 0) |
+                           (data & BIT(15) ? DST_Y_TOP_TO_BOTTOM : 0) |
+                           (data & BIT(2) ? DST_Y_MAJOR : 0);
+        break;
     case DEFAULT_OFFSET:
         if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
             s->regs.default_offset = data & 0xfffffff0;
