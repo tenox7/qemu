@@ -38,6 +38,7 @@ system_ss.add(files(
   'numa.c',
   'qdev-fw.c',
   'qdev-hotplug.c',
+  'status-text.c',
   'qdev-properties-system.c',
   'reset.c',
   'sysbus.c',
